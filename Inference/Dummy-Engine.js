@@ -1,3 +1,4 @@
+
 (async function () {
     // Load TensorFlow.js if not already loaded
     if (typeof tf === "undefined") {
@@ -76,12 +77,19 @@
             bubbles: true
         };
 
-        // Ensure the canvas or game has focus
-        const activeElement = document.activeElement || document.body;
+        const canvasElement = document.getElementById("screen"); // Ensure this matches your canvas element
+
+        // Focus on the canvas or game window before sending key events
+        if (canvasElement) {
+            canvasElement.focus(); // Ensure canvas is focused
+        }
 
         // Dispatch keydown + keyup events for better recognition
-        activeElement.dispatchEvent(new KeyboardEvent("keydown", eventOptions));
-        setTimeout(() => activeElement.dispatchEvent(new KeyboardEvent("keyup", eventOptions)), 50);
+        const keyDownEvent = new KeyboardEvent("keydown", eventOptions);
+        const keyUpEvent = new KeyboardEvent("keyup", eventOptions);
+
+        canvasElement.dispatchEvent(keyDownEvent);
+        setTimeout(() => canvasElement.dispatchEvent(keyUpEvent), 50);
     }
 
     // Function to predict action and send keypress
@@ -95,23 +103,32 @@
         if (!tensor) return;
 
         const prediction = model.predict(tensor);
-        const probabilities = await prediction.data();
+        const probabilities = prediction.dataSync();
         const actionIndex = probabilities.indexOf(Math.max(...probabilities));
 
         console.log("Predicted Action:", ACTIONS[actionIndex], "Probabilities:", probabilities);
 
         // Send keypress to the game
         sendKeyPress(ACTIONS[actionIndex]);
+
+        // Continue predicting in the next frame
+        requestAnimationFrame(() => predictAndAct(canvasId));
     }
 
-    // Train Model (Dummy Training)
+    // Train Model (Basic RL Training)
     async function trainModel(canvasId) {
         console.log("Training model...");
 
         for (let i = 0; i < 100; i++) {
             const inputTensor = await getProcessedCanvasTensor(canvasId);
-            const target = tf.tensor2d([[1, 0, 0, 0]]);  // Dummy label for "W" action
-
+            
+            // Get the reward based on the game's end
+            const reward = document.querySelector(".time-announcer") ? 1 : 0; // Reward 1 if game over
+            
+            // For simplicity, consider the target as the action taken with the reward
+            const target = tf.tensor2d([[reward, 0, 0, 0]]); // Example: W-action with reward
+            
+            // Update model based on reward (basic RL step)
             await model.fit(inputTensor, target, { epochs: 1 });
         }
 
@@ -125,7 +142,8 @@
         if (trainMode) {
             await trainModel(canvasId);
         } else {
-            setInterval(() => predictAndAct(canvasId), 500); // Run inference every 500ms
+            // Start continuous prediction
+            requestAnimationFrame(() => predictAndAct(canvasId));
         }
     }
 
