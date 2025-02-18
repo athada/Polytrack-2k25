@@ -69,28 +69,27 @@
 
     // Function to send keypress event (Fixes input issue)
     function sendKeyPress(key) {
-        const eventOptions = {
-            key: key,
-            code: key.toUpperCase(),
-            keyCode: key.toUpperCase().charCodeAt(0),
-            which: key.toUpperCase().charCodeAt(0),
-            bubbles: true
-        };
-
+        eventOptions = {
+            "w": {code: "KeyW", keyCode: 87, bubbles: true},
+            "a": {code: "KeyA", keyCode: 65, bubbles: true},
+            "d": {code: "KeyD", keyCode: 68, bubbles: true},
+            "s": {code: "KeyS", keyCode: 83, bubbles: true}
+        }[key.toLowerCase()]
+    
         const canvasElement = document.getElementById("screen"); // Ensure this matches your canvas element
-
+    
         // Focus on the canvas or game window before sending key events
         if (canvasElement) {
             canvasElement.focus(); // Ensure canvas is focused
         }
-
+    
         // Dispatch keydown + keyup events for better recognition
         const keyDownEvent = new KeyboardEvent("keydown", eventOptions);
         const keyUpEvent = new KeyboardEvent("keyup", eventOptions);
-
+    
         canvasElement.dispatchEvent(keyDownEvent);
         setTimeout(() => canvasElement.dispatchEvent(keyUpEvent), 50);
-    }
+}
 
     // Function to predict action and send keypress
     async function predictAndAct(canvasId) {
