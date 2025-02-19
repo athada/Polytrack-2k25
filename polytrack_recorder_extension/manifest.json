@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "Polytrack Video Recorder",
+  "version": "1.0",
+  "description": "Records gameplay video from the game canvas.",
+  "permissions": ["tabs", "tabCapture", "activeTab", "scripting"],
+  "action": {
+    "default_popup": "index.html"
+  },
+  "content_scripts": [
+    {
+      "type": "module",
+      "matches": [
+        "https://kodub.itch.io/polytrack",
+        "https://www.kodub.com/apps/polytrack",
+        "https://app-polytrack.kodub.com/",
+        "https://app-polytrack.kodub.com/*"
+      ],
+      "js": ["./src/recording.js"],
+      "run_at": "document_end"
+    }
+  ]
+}
