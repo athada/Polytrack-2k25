@@ -6,6 +6,8 @@
 
   let model;
   const ACTIONS = ["w", "s", "a", "d"]; // Ensure lowercase (some games require this)
+  const FRAME_SEQ_LEN = 8;
+
 
   // Function to create or load a model
   async function createOrLoadModel(trainMode = false) {
@@ -19,20 +21,11 @@
       }
     }
 
-    // Define a small CNN model for grayscale 224x224 images
+    // Define a small CNN model for sequence of grayscale 224x224 images
     model = tf.sequential();
-    model.add(
-      tf.layers.conv2d({
-        inputShape: [224, 224, 1],
-        filters: 8,
-        kernelSize: 3,
-        activation: "relu",
-      })
-    );
+    model.add(tf.layers.conv2d({inputShape: [224, 224, FRAME_SEQ_LEN], filters: 8, kernelSize: 3, activation: "relu"}));
     model.add(tf.layers.maxPooling2d({ poolSize: 2, strides: 2 }));
-    model.add(
-      tf.layers.conv2d({ filters: 16, kernelSize: 3, activation: "relu" })
-    );
+    model.add(tf.layers.conv2d({ filters: 16, kernelSize: 3, activation: "relu" }));
     model.add(tf.layers.maxPooling2d({ poolSize: 2, strides: 2 }));
     model.add(tf.layers.flatten());
     model.add(tf.layers.dense({ units: 32, activation: "relu" }));
@@ -48,7 +41,7 @@
   }
 
   // Function to capture and preprocess the canvas image
-  async function getProcessedCanvasTensors(canvasId, numCaptures = 1) {
+  async function getProcessedCanvasTensors(canvasId, numCaptures) {
     const canvas = document.getElementById(canvasId);
     if (!canvas) {
       console.error("Canvas not found!");
@@ -78,17 +71,15 @@
       }
 
       // Convert to TensorFlow.js tensor and normalize
-      let tensor = tf
-        .tensor(grayData, [224, 224, 1])
-        .toFloat()
-        .div(tf.scalar(255));
-      // Expand dimensions so the shape is [1, 224, 224, 1]
-      tensors.push(tensor.expandDims(0));
+      let tensor = tf.tensor(grayData, [224, 224, 1]);
+      
+      // Append tensor to list
+      tensors.push(tensor);
     }
-    return tf
-      .tensor(tensors, [224, 224, numCaptures])
-      .toFloat()
-      .div(tf.scalar(255));
+    return tf.concat(tensors, axis=-1)
+             .toFloat()
+             .div(tf.scalar(255))
+             .expandDims(0);
   }
 
   // Function to send keypress event (Fixes input issue)
@@ -122,7 +113,7 @@
       return;
     }
 
-    const tensor = await getProcessedCanvasTensor(canvasId);
+    const tensor = await getProcessedCanvasTensors(canvasId, FRAME_SEQ_LEN);
     if (!tensor) return;
 
     const prediction = model.predict(tensor);
