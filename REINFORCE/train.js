@@ -9,6 +9,19 @@ let gameActions = [];
 
 
 
+// Compute discounted rewards
+  function computeDiscountedRewards(rewards, gamma = 0.99) {
+      let discountedRewards = [];
+      let cumulativeReward = 0;
+      for (let i = rewards.length - 1; i >= 0; i--) {
+          cumulativeReward = rewards[i] + gamma * cumulativeReward;
+          discountedRewards.unshift(cumulativeReward);
+      }
+      return tf.tensor2d(discountedRewards, [discountedRewards.length, 1]);
+  }
+
+
+
 // Train the model using collected experience
 async function trainModel(epochs) {
     console.log("Training model...");
