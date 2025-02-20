@@ -1,8 +1,7 @@
-import * as tf from '@tensorflow/tfjs'
-
+import * as tf from "@tensorflow/tfjs";
 
 // Function to capture and preprocess the canvas image
-async function getProcessedCanvasTensors(canvasId, numCaptures) {
+export async function getProcessedCanvasTensors(canvasId, numCaptures) {
   const canvas = document.getElementById(canvasId);
   if (!canvas) {
     console.error("Canvas not found!");
@@ -33,20 +32,19 @@ async function getProcessedCanvasTensors(canvasId, numCaptures) {
 
     // Convert to TensorFlow.js tensor and normalize
     let tensor = tf.tensor(grayData, [224, 224, 1]);
-      
+
     // Append tensor to list
     tensors.push(tensor);
   }
-  return tf.concat(tensors, axis=-1)
-           .toFloat()
-           .div(tf.scalar(255))
-           .expandDims(0);
+  return tf
+    .concat(tensors, (axis = -1))
+    .toFloat()
+    .div(tf.scalar(255))
+    .expandDims(0);
 }
 
-
-
 // Function to send keypress event
-function sendKeyPress(key) {
+export function sendKeyPress(key) {
   eventOptions = {
     w: { code: "KeyW", keyCode: 87, bubbles: true },
     a: { code: "KeyA", keyCode: 65, bubbles: true },
@@ -69,21 +67,20 @@ function sendKeyPress(key) {
   setTimeout(() => canvasElement.dispatchEvent(keyUpEvent), 50);
 }
 
-
-
 // 🔍 Detect if the game is over (reward = 1)
-  function checkGameOver() {
-      return document.querySelector(".time-announcer") !== null;
-  }
-
-
+export function checkGameOver() {
+  return document.querySelector(".time-announcer") !== null;
+}
 
 // Function to Restart the Game from Checkpoint
-function restartGame() {
-    const eventOptions = {code: "KeyR", keyCode: 82, bubbles: true};
+export function restartGame() {
+  const eventOptions = { code: "KeyR", keyCode: 82, bubbles: true };
 
-    // Dispatch keydown + keyup events to trigger the restart
-    document.dispatchEvent(new KeyboardEvent("keydown", eventOptions));
-    setTimeout(() => document.dispatchEvent(new KeyboardEvent("keyup", eventOptions)), 50);
-    console.log("Game restarted from begining!");
+  // Dispatch keydown + keyup events to trigger the restart
+  document.dispatchEvent(new KeyboardEvent("keydown", eventOptions));
+  setTimeout(
+    () => document.dispatchEvent(new KeyboardEvent("keyup", eventOptions)),
+    50
+  );
+  console.log("Game restarted from begining!");
 }
