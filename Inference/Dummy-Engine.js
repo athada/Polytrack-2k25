@@ -5,6 +5,8 @@ if (typeof tf === "undefined") {
   await import("https://cdn.jsdelivr.net/npm/@tensorflow/tfjs");
 }
 
+let isInterrupted = false;
+  
 let model;
 let gameRewards = [];
 let gameStates = [];
@@ -118,42 +120,43 @@ function sendKeyPress(key) {
   
 // Function to predict action and send keypress
 async function predictAndAct(canvasId) {
-  if (!model) {
-    console.error("Model not initialized!");
-    return;
-  }
-
-  const tensor = await getProcessedCanvasTensors(canvasId, FRAME_SEQ_LEN);
-  if (!tensor) return;
-
-  const prediction = model.predict(tensor);
-  const probabilities = prediction.dataSync();
-  const actionIndex = probabilities.indexOf(Math.max(...probabilities));
-
-  //console.log("Predicted Action:", ACTIONS[actionIndex], "Probabilities:", probabilities);
-
-  // Store state, action, and reward for training
-  gameStates.push(tensor);
-  gameActions.push(actionIndex);
-  gameRewards.push(checkGameOver() ? 1 : 0);
-  
-  // Send keypress to the game
-  sendKeyPress(ACTIONS[actionIndex]);
-
-  // Continue predicting in the next frame
-  requestAnimationFrame(() => predictAndAct(canvasId));
-}
-
-// Compute discounted rewards
-  function computeDiscountedRewards(rewards, gamma = 0.99) {
-      let discountedRewards = [];
-      let cumulativeReward = 0;
-      for (let i = rewards.length - 1; i >= 0; i--) {
-          cumulativeReward = rewards[i] + gamma * cumulativeReward;
-          discountedRewards.unshift(cumulativeReward);
+    if (!model) {
+      console.error("Model not initialized! Attempting to create/load model...");
+      await createOrLoadModel();
+      if (!model) {
+        console.error("Failed to initialize model!");
+        return;
       }
-      return tf.tensor2d(discountedRewards, [discountedRewards.length, 1]);
-  }
+    }
+  
+    // Check if interrupted
+    if (isInterrupted) {
+        isInterrupted = false; // Reset for next time
+        return;
+    }
+
+    const tensor = await getProcessedCanvasTensors(canvasId, FRAME_SEQ_LEN);
+    if (!tensor) return;
+  
+    const prediction = model.predict(tensor);
+    const probabilities = prediction.dataSync();
+    const actionIndex = probabilities.indexOf(Math.max(...probabilities));
+  
+    //console.log("Predicted Action:", ACTIONS[actionIndex], "Probabilities:", probabilities);
+  
+    // Store state, action, and reward for training
+    gameStates.push(tensor);
+    gameActions.push(actionIndex);
+    gameRewards.push(checkGameOver() ? 1 : 0);
+    
+    // Send keypress to the game
+    sendKeyPress(ACTIONS[actionIndex]);
+  
+    // Continue predicting in the next frame if not game over
+    if (!checkGameOver()) {
+        requestAnimationFrame(() => predictAndAct(canvasId));
+    }
+}
   
 // Train the model using collected experience
 async function trainModel(epochs) {
@@ -214,4 +217,12 @@ async function startAI(canvasId, epochs) {
 
 // Execute with canvas ID
 startAI("screen", 100); 
+  
+// Adding interrupt Listener
+window.addEventListener("keydown", (e) => {
+    if (e.key === "i") {
+        isInterrupted = true;
+        console.log("Interrupted");
+    }
+});
 })();
