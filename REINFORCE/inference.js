@@ -2,6 +2,7 @@ import * as tf from '@tensorflow/tfjs'
 
 
 const ACTIONS = ["w", "s", "a", "d"]; // Ensure lowercase (some games require this)
+let isInterrupted = false;
 
 
 async function predictAndAct(canvasId) {
