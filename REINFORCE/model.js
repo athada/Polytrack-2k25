@@ -1,3 +1,10 @@
+import * as tf from '@tensorflow/tfjs'
+
+
+const FRAME_SEQ_LEN = 8;
+
+
+
 // Function to create or load a model
 async function createOrLoadModel(trainMode = false) {
   if (!trainMode) {
