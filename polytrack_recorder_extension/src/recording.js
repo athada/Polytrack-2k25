@@ -1,16 +1,34 @@
 (() => {
   function createCanvasRecorder(
-    canvasId,
+    sourceCanvasId,
+    targetWidth = 1920,
+    targetHeight = 1080,
     fps = 25,
     options = { mimeType: "video/webm; codecs=vp9" }
   ) {
-    const canvas = document.getElementById(canvasId);
-    if (!canvas) {
-      console.error(`Canvas element with id '${canvasId}' not found!`);
+    const sourceCanvas = document.getElementById(sourceCanvasId);
+    if (!sourceCanvas) {
+      console.error(`Canvas element with id '${sourceCanvasId}' not found!`);
       return null;
     }
 
-    const canvasStream = canvas.captureStream(fps);
+    // Create an offscreen canvas with the desired resolution.
+    const offscreenCanvas = document.createElement("canvas");
+    offscreenCanvas.width = targetWidth;
+    offscreenCanvas.height = targetHeight;
+    const offscreenCtx = offscreenCanvas.getContext("2d");
+
+    // Continuously copy the source canvas to the offscreen canvas, scaling it.
+    function updateOffscreen() {
+      offscreenCtx.clearRect(0, 0, targetWidth, targetHeight);
+      // Draw the source canvas onto the offscreen canvas scaled to target dimensions.
+      offscreenCtx.drawImage(sourceCanvas, 0, 0, targetWidth, targetHeight);
+      requestAnimationFrame(updateOffscreen);
+    }
+    updateOffscreen();
+
+    // Capture the stream from the offscreen canvas.
+    const canvasStream = offscreenCanvas.captureStream(fps);
     let recordedChunks = [];
     let mediaRecorder;
 
@@ -80,8 +98,8 @@
     return null;
   };
 
-  // Create a canvas recorder for the canvas with id "screen".
-  const canvasRecorder = createCanvasRecorder("screen");
+  // Create a canvas recorder for the canvas with id "screen" and desired resolution (1920×1080).
+  const canvasRecorder = createCanvasRecorder("screen", 200, 200);
   if (!canvasRecorder) return;
 
   let recordingState = "idle";
@@ -89,7 +107,7 @@
   function checkDomForRecording() {
     const speed = getSpeed();
 
-    // If the game ended in a previous session and speed is now 0, reset state.
+    // Reset state if the game has ended and speed is null.
     if (recordingState === "ended" && speed === null) {
       console.log("Game reset; ready to start a new session.");
       recordingState = "idle";
@@ -101,7 +119,7 @@
       recordingState = "recording";
     }
 
-    // If we're recording and the game-end indicator appears, stop recording.
+    // Stop recording if the game-end indicator appears.
     if (
       recordingState === "recording" &&
       document.querySelector(".time-announcer")
