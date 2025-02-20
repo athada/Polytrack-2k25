@@ -33,17 +33,14 @@ async function trainModel(epochs) {
       const actions = tf.tensor1d(gameActions, "int32");
       const rewards = computeDiscountedRewards(gameRewards);
 
-      const oneHotActions = tf.oneHot(actions, 4);
-      const optimizer = model.optimizer;
-
       // Compute policy loss (negative log probability * reward)
-      const logits = model.apply(stateTensors);
+      const actionOneHot = tf.oneHot(actions, 4);
+      const logits = model.apply(states);
       const logProbs = tf.losses.softmaxCrossEntropy(actionOneHot, logits);
-      const loss = tf.sum(tf.mul(logProbs, rewardTensors));
+      const loss = tf.sum(tf.mul(logProbs, rewards));
 
       // Optimize
-      const optimizer = tf.train.adam(0.01);
-      optimizer.minimize(() => loss);
+      model.optimizer.minimize(() => loss);
       console.log(`Epoch ${epoch + 1}/${epochs} - Loss: ${loss.dataSync()}`);
     }
     
