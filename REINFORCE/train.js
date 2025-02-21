@@ -1,4 +1,5 @@
 import * as tf from "@tensorflow/tfjs";
+import { saveModelWithCleanup } from "./model";
 
 let model;
 let gameRewards = [];
@@ -39,7 +40,7 @@ export async function trainModel(epochs) {
   }
 
   // Save model
-  await model.save("localstorage://policy-gradient-game-model");
+  await saveModelWithCleanup(model);
   console.log("Model trained and saved!");
 
   // Clear experience

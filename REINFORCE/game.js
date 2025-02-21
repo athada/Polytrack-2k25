@@ -84,3 +84,36 @@ export function restartGame() {
   );
   console.log("Game restarted from begining!");
 }
+
+export function getGameData() {
+  const checkpointEl = document.querySelector(".checkpoint");
+  const speedEl = document.querySelector(".speedometer");
+
+  let currentLap = null;
+  let totalLaps = null;
+  let speed = null;
+
+  if (checkpointEl) {
+    const span = checkpointEl.querySelector("span");
+    if (span && span.innerText.includes("/")) {
+      const [lap, total] = span.innerText.split("/");
+      currentLap = lap.trim();
+      totalLaps = total.trim();
+    }
+  }
+
+  if (speedEl) {
+    const span = speedEl.querySelector("span");
+    if (span) {
+      speed = span.innerText.trim();
+    }
+  }
+
+  return {
+    currentLap,
+    totalLaps,
+    speed,
+  };
+}
+const { currentLap, totalLaps, speed } = getGameData();
+console.log(currentLap, totalLaps, speed);
