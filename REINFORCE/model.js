@@ -6,11 +6,15 @@ export const FRAME_SEQ_LEN = 8;
 export async function createOrLoadModel(trainMode = false) {
   if (!trainMode) {
     try {
-      model = await loadLatestModel();
+      const loadedModel = await loadLatestModel();
+      if (!loadedModel) {
+        throw new Error("No saved models found");
+      }
+      model = loadedModel;
       console.log("Loaded existing model.");
       return;
     } catch (error) {
-      console.warn("No saved model found, creating a new one.");
+      console.warn("No saved model found, creating a new one:", error.message);
     }
   }
 
@@ -108,5 +112,5 @@ export async function loadLatestModel() {
   console.log(`Loading latest model: ${latestKey}`);
 
   // Load and return the latest model
-  return await tf.loadLayersModel(latestKey);
+  return await tf.loadLatestModel(latestKey);
 }

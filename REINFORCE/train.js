@@ -1,5 +1,5 @@
-import * as tf from "@tensorflow/tfjs";
-import { saveModelWithCleanup } from "./model";
+//import * as tf from "@tensorflow/tfjs";
+//import { saveModelWithCleanup } from "./model";
 
 let model;
 let gameRewards = [];
@@ -24,26 +24,29 @@ export async function trainModel(epochs) {
   if (gameStates.length === 0) return;
 
   for (let epoch = 0; epoch < epochs; epoch++) {
-    const states = tf.concat(gameStates);
-    const actions = tf.tensor1d(gameActions, "int32");
-    const rewards = computeDiscountedRewards(gameRewards);
+    const loss = tf.tidy(() => {
+      const states = tf.concat(gameStates);
+      const actions = tf.tensor1d(gameActions, "int32");
+      const rewards = computeDiscountedRewards(gameRewards);
 
-    // Compute policy loss (negative log probability * reward)
-    const actionOneHot = tf.oneHot(actions, 4);
-    const logits = model.apply(states);
-    const logProbs = tf.losses.softmaxCrossEntropy(actionOneHot, logits);
-    const loss = tf.sum(tf.mul(logProbs, rewards));
+      // Use tape to track gradients
+      const actionOneHot = tf.oneHot(actions, 4);
+      const logits = model.predict(states);
+      const logProbs = tf.losses.softmaxCrossEntropy(actionOneHot, logits);
+      return tf.sum(tf.mul(logProbs, rewards));
+    });
 
-    // Optimize
-    model.optimizer.minimize(() => loss);
+    // Optimize using the gradient tape
+    await model.optimizer.minimize(() => loss, true);
     console.log(`Epoch ${epoch + 1}/${epochs} - Loss: ${loss.dataSync()}`);
+    loss.dispose();
   }
 
-  // Save model
   await saveModelWithCleanup(model);
   console.log("Model trained and saved!");
 
   // Clear experience
+  gameStates.forEach(tensor => tensor.dispose());
   gameStates = [];
   gameActions = [];
   gameRewards = [];

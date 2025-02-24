@@ -1,4 +1,6 @@
 import * as tf from "@tensorflow/tfjs";
+const SPEED_THRESHOLD = 600;  // Adjust this value based on your game's speed units
+
 
 // Function to capture and preprocess the canvas image
 export async function getProcessedCanvasTensors(canvasId, numCaptures) {
@@ -67,9 +69,20 @@ export function sendKeyPress(key) {
   setTimeout(() => canvasElement.dispatchEvent(keyUpEvent), 50);
 }
 
-// 🔍 Detect if the game is over (reward = 1)
-export function checkGameOver() {
-  return document.querySelector(".time-announcer") !== null;
+// Check if game is over.
+function checkGameOver() {
+  // Check for time announcer
+  const hasTimeAnnouncer = document.querySelector(".time-announcer") !== null;
+  
+  // Check speed threshold
+  const gameData = getGameData();
+  const currentSpeed = gameData.speed ? parseFloat(gameData.speed) : 0;
+  const isSpeedTooHigh = currentSpeed > SPEED_THRESHOLD;
+  
+  // Check for interrupt flag
+  const isInterruptTriggered = isInterrupted;
+
+  return hasTimeAnnouncer || isSpeedTooHigh || isInterruptTriggered;
 }
 
 // Function to Restart the Game from Checkpoint
@@ -115,5 +128,15 @@ export function getGameData() {
     speed,
   };
 }
-const { currentLap, totalLaps, speed } = getGameData();
-console.log(currentLap, totalLaps, speed);
+
+let isInterrupted = false;
+// Adding interrupt Listener
+window.addEventListener("keydown", (e) => {
+  if (e.key === "i") {
+    isInterrupted = true;
+    console.log("Interrupted");
+  }
+});
+
+//const { currentLap, totalLaps, speed } = getGameData();
+//console.log(currentLap, totalLaps, speed);
