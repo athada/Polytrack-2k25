@@ -6,13 +6,13 @@
 
 const GAME_LEN = 500;
 
-async function startAI(canvasId, epochs, n_runs) {
+async function startAI(canvasId, epochs, episodes=10) {
   let runCount = 0;  // Local variable that resets with each startAI call
   await createOrLoadModel();
   
   const gameInterval = setInterval(async () => {
-    if (runCount >= n_runs) {
-      console.log(`Training completed after ${n_runs} runs!`);
+    if (runCount >= episodes) {
+      console.log(`Training completed after ${episodes} episodes!`);
       return;
     }
 
@@ -20,7 +20,7 @@ async function startAI(canvasId, epochs, n_runs) {
     if (checkGameOver()) {
       await trainModel(epochs);
       runCount++;
-      console.log(`Completed run ${runCount}/${n_runs}`);
+      console.log(`Completed run ${runCount}/${episodes}`);
       restartGame();
     }
   }, GAME_LEN);

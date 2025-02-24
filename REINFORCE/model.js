@@ -1,6 +1,6 @@
 import * as tf from "@tensorflow/tfjs";
 import { CANVAS_SIZE } from "./game";
-import { FRAME_SEQ_LEN } from "./game";
+import { N_FRAMES } from "./game";
 
 // Function to create or load a model
 export async function createOrLoadModel(trainMode = false) {
@@ -22,7 +22,7 @@ export async function createOrLoadModel(trainMode = false) {
   model = tf.sequential();
   model.add(
     tf.layers.conv2d({
-      inputShape: [CANVAS_SIZE, CANVAS_SIZE, FRAME_SEQ_LEN],
+      inputShape: [CANVAS_SIZE, CANVAS_SIZE, N_FRAMES],
       filters: 8,
       kernelSize: 3,
       activation: "relu",

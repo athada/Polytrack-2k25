@@ -4,46 +4,47 @@ export const CANVAS_SIZE = 200;
 export const FRAME_SEQ_LEN = 120;
 
 // Function to capture and preprocess the canvas image
-export async function getProcessedCanvasTensors(canvasId, numCaptures) {
-  const canvas = document.getElementById(canvasId);
-  if (!canvas) {
-    console.error("Canvas not found!");
-    return [];
+const TOTAL_FRAMES = 120; 
+export const N_FRAMES = 8;// Number of frames to capture per second
+const FRAME_INTERVAL = Math.floor(TOTAL_FRAMES / N_FRAMES);
+
+export async function captureCanvasFramesAsGrayscaleTensor(sourceCanvasId, targetWidth = 224, targetHeight = 224) {
+  const sourceCanvas = document.getElementById(sourceCanvasId);
+  if (!sourceCanvas) {
+    console.error(`Canvas element with id '${sourceCanvasId}' not found!`);
+    return null;
   }
+
+  const offscreenCanvas = document.createElement("canvas");
+  offscreenCanvas.width = targetWidth;
+  offscreenCanvas.height = targetHeight;
+  const offscreenCtx = offscreenCanvas.getContext("2d");
 
   const tensors = [];
 
-  for (let i = 0; i < numCaptures; i++) {
-    // Create an offscreen canvas for resizing
-    const offscreenCanvas = document.createElement("canvas");
-    offscreenCanvas.width = CANVAS_SIZE;
-    offscreenCanvas.height = CANVAS_SIZE;
-    const ctx = offscreenCanvas.getContext("2d");
+  for (let i = 0; i < TOTAL_FRAMES; i++) {
+    await new Promise((resolve) => requestAnimationFrame(() => {
+      if (i % FRAME_INTERVAL === 0) {  // Capture only every FRAME_INTERVAL-th frame
+        offscreenCtx.drawImage(sourceCanvas, 0, 0, targetWidth, targetHeight);
+        
+        // Convert to TensorFlow.js tensor
+        let tensor = tf.browser.fromPixels(offscreenCanvas).toFloat().div(255);
 
-    // Copy and resize the canvas image
-    ctx.drawImage(canvas, 0, 0, 224, 224);
+        // Convert RGB to Grayscale using the luminance formula
+        tensor = tensor.mean(2).expandDims(-1); // Averaging over the last axis (color channels)
 
-    // Convert to grayscale
-    const imageData = ctx.getImageData(0, 0, 224, 224);
-    const grayData = new Uint8ClampedArray(224 * 224);
-    for (let j = 0; j < imageData.data.length; j += 4) {
-      const r = imageData.data[j];
-      const g = imageData.data[j + 1];
-      const b = imageData.data[j + 2];
-      grayData[j / 4] = 0.299 * r + 0.587 * g + 0.114 * b;
-    }
-
-    // Convert to TensorFlow.js tensor and normalize
-    let tensor = tf.tensor(grayData, [224, 224, 1]);
-
-    // Append tensor to list
-    tensors.push(tensor);
+        tensors.push(tensor);
+      }
+      resolve();
+    }));
   }
-  return tf
-    .concat(tensors, (axis = -1))
-    .toFloat()
-    .div(tf.scalar(255))
-    .expandDims(0);
+
+  if (tensors.length === 0) {
+    console.error("No frames captured.");
+    return null;
+  }
+
+  return tf.concat(tensors, axis=-1); // Stack tensors along a new batch dimension
 }
 
 // Function to send keypress event
@@ -138,6 +139,3 @@ window.addEventListener("keydown", (e) => {
     console.log("Interrupted");
   }
 });
-
-//const { currentLap, totalLaps, speed } = getGameData();
-//console.log(currentLap, totalLaps, speed);
