@@ -1,14 +1,18 @@
 import * as tf from "@tensorflow/tfjs";
-const SPEED_THRESHOLD = 600;  // Adjust this value based on your game's speed units
+const SPEED_THRESHOLD = 600; // Adjust this value based on your game's speed units
 export const CANVAS_SIZE = 200;
 export const FRAME_SEQ_LEN = 120;
 
 // Function to capture and preprocess the canvas image
-const TOTAL_FRAMES = 120; 
-export const N_FRAMES = 8;// Number of frames to capture per second
+const TOTAL_FRAMES = 120;
+export const N_FRAMES = 8; // Number of frames to capture per second
 const FRAME_INTERVAL = Math.floor(TOTAL_FRAMES / N_FRAMES);
 
-export async function captureCanvasFramesAsGrayscaleTensor(sourceCanvasId, targetWidth = 224, targetHeight = 224) {
+export async function captureCanvasFramesAsGrayscaleTensor(
+  sourceCanvasId,
+  targetWidth = 224,
+  targetHeight = 224
+) {
   const sourceCanvas = document.getElementById(sourceCanvasId);
   if (!sourceCanvas) {
     console.error(`Canvas element with id '${sourceCanvasId}' not found!`);
@@ -23,20 +27,26 @@ export async function captureCanvasFramesAsGrayscaleTensor(sourceCanvasId, targe
   const tensors = [];
 
   for (let i = 0; i < TOTAL_FRAMES; i++) {
-    await new Promise((resolve) => requestAnimationFrame(() => {
-      if (i % FRAME_INTERVAL === 0) {  // Capture only every FRAME_INTERVAL-th frame
-        offscreenCtx.drawImage(sourceCanvas, 0, 0, targetWidth, targetHeight);
-        
-        // Convert to TensorFlow.js tensor
-        let tensor = tf.browser.fromPixels(offscreenCanvas).toFloat().div(255);
+    await new Promise((resolve) =>
+      requestAnimationFrame(() => {
+        if (i % FRAME_INTERVAL === 0) {
+          // Capture only every FRAME_INTERVAL-th frame
+          offscreenCtx.drawImage(sourceCanvas, 0, 0, targetWidth, targetHeight);
 
-        // Convert RGB to Grayscale using the luminance formula
-        tensor = tensor.mean(2).expandDims(-1); // Averaging over the last axis (color channels)
+          // Convert to TensorFlow.js tensor
+          let tensor = tf.browser
+            .fromPixels(offscreenCanvas)
+            .toFloat()
+            .div(255);
 
-        tensors.push(tensor);
-      }
-      resolve();
-    }));
+          // Convert RGB to Grayscale using the luminance formula
+          tensor = tensor.mean(2).expandDims(-1); // Averaging over the last axis (color channels)
+
+          tensors.push(tensor);
+        }
+        resolve();
+      })
+    );
   }
 
   if (tensors.length === 0) {
@@ -44,7 +54,7 @@ export async function captureCanvasFramesAsGrayscaleTensor(sourceCanvasId, targe
     return null;
   }
 
-  return tf.concat(tensors, axis=-1); // Stack tensors along a new batch dimension
+  return tf.concat(tensors, (axis = -1)); // Stack tensors along a new batch dimension
 }
 
 // Function to send keypress event
@@ -75,12 +85,12 @@ export function sendKeyPress(key) {
 function checkGameOver() {
   // Check for time announcer
   const hasTimeAnnouncer = document.querySelector(".time-announcer") !== null;
-  
+
   // Check speed threshold
   const gameData = getGameData();
   const currentSpeed = gameData.speed ? parseFloat(gameData.speed) : 0;
   const isSpeedTooHigh = currentSpeed > SPEED_THRESHOLD;
-  
+
   // Check for interrupt flag
   const isInterruptTriggered = isInterrupted;
 
@@ -103,10 +113,12 @@ export function restartGame() {
 export function getGameData() {
   const checkpointEl = document.querySelector(".checkpoint");
   const speedEl = document.querySelector(".speedometer");
+  const timerEl = document.querySelector(".center");
 
   let currentLap = null;
   let totalLaps = null;
   let speed = null;
+  let timeInSeconds = null;
 
   if (checkpointEl) {
     const span = checkpointEl.querySelector("span");
@@ -124,10 +136,20 @@ export function getGameData() {
     }
   }
 
+  if (timerEl) {
+    const spans = timerEl.querySelectorAll("span");
+    if (spans.length >= 5) {
+      const minutes = parseInt(spans[0].innerText + spans[1].innerText, 10);
+      const seconds = parseInt(spans[3].innerText + spans[4].innerText, 10);
+      timeInSeconds = minutes * 60 + seconds;
+    }
+  }
+
   return {
     currentLap,
     totalLaps,
     speed,
+    timeInSeconds,
   };
 }
 
