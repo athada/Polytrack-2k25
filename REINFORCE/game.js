@@ -1,6 +1,7 @@
 import * as tf from "@tensorflow/tfjs";
 const SPEED_THRESHOLD = 600;  // Adjust this value based on your game's speed units
-
+export const CANVAS_SIZE = 200;
+export const FRAME_SEQ_LEN = 120;
 
 // Function to capture and preprocess the canvas image
 export async function getProcessedCanvasTensors(canvasId, numCaptures) {
@@ -15,8 +16,8 @@ export async function getProcessedCanvasTensors(canvasId, numCaptures) {
   for (let i = 0; i < numCaptures; i++) {
     // Create an offscreen canvas for resizing
     const offscreenCanvas = document.createElement("canvas");
-    offscreenCanvas.width = 224;
-    offscreenCanvas.height = 224;
+    offscreenCanvas.width = CANVAS_SIZE;
+    offscreenCanvas.height = CANVAS_SIZE;
     const ctx = offscreenCanvas.getContext("2d");
 
     // Copy and resize the canvas image

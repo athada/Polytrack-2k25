@@ -5,7 +5,8 @@ import { getProcessedCanvasTensors, sendKeyPress, checkGameOver } from "./game";
 const ACTIONS = ["w", "s", "a", "d"]; // Ensure lowercase (some games require this)
 let isInterrupted = false;
 
-export async function predictAndAct(canvasId) {
+//export 
+async function predictAndAct(canvasId) {
   if (!model) {
     console.error("Model not initialized! Attempting to create/load model...");
     await createOrLoadModel();
