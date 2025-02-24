@@ -90,7 +90,7 @@ function checkGameOver() {
 // Function to Restart the Game from Checkpoint
 export function restartGame() {
   const eventOptions = { code: "KeyR", keyCode: 82, bubbles: true };
-
+  isInterrupted = false;
   // Dispatch keydown + keyup events to trigger the restart
   document.dispatchEvent(new KeyboardEvent("keydown", eventOptions));
   setTimeout(
