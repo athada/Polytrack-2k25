@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "Model Manager Extension",
+  "version": "1.0",
+  "description": "Manages models for the game",
+  "permissions": ["tabs", "tabCapture", "activeTab", "scripting"],
+  "action": {
+    "default_popup": "index.html"
+  },
+  "content_scripts": [
+    {
+      "type": "module",
+      "matches": [
+        "https://kodub.itch.io/polytrack",
+        "https://www.kodub.com/apps/polytrack",
+        "https://app-polytrack.kodub.com/",
+        "https://app-polytrack.kodub.com/*"
+      ],
+      "js": ["./dist/content.bundle.js"],
+      "run_at": "document_end"
+    }
+  ]
+}
