@@ -1,2 +1,74 @@
 /model_manager_extension/node_modules
 /model_manager_extension/dist
+.env
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+.output
+stats.html
+stats-*.json
+.wxt
+web-ext.config.ts
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Build directories
+/build/
+/dist/
+/.build/
+
+# Coverage directory
+/coverage/
+/.nyc_output
+
+# Environment files
+.env.local
+.env.*.local
+.env.development
+.env.test
+.env.production
+
+# Cache directories
+.cache/
+.parcel-cache/
+.npm/
+.eslintcache
+.stylelintcache
+
+# Webpack specific
+/webpack.stats.json
+.webpack/
+
+# React specific
+/.pnp
+.pnp.js
+
+# Testing
+/coverage
+/cypress/videos/
+/cypress/screenshots/
+
+# Misc
+.temp
+.tmp
+.cache
+*.tsbuildinfo
+.history/
+.next/
