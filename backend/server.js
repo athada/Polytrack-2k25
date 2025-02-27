@@ -29,9 +29,6 @@ app.post("/generate-summary", upload.single("video"), async (req, res) => {
     const videoBuffer = req.file.buffer;
     const videoFilename = req.file.originalname;
 
-    // Convert the video buffer to a base64 string (if required)
-    const videoBase64 = videoBuffer.toString("base64");
-
     // Retrieve the Gemini API key from your environment variables
     const geminiApiKey = process.env.GEMINI_API_KEY;
     if (!geminiApiKey) {
@@ -42,15 +39,24 @@ app.post("/generate-summary", upload.single("video"), async (req, res) => {
 
     // Initialize the Gemini API client
     const genAI = new GoogleGenerativeAI(geminiApiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
 
-    // Call the Gemini API passing in the prompt and the base64 encoded video
-    const result = await model.generateContent(prompt, {
-      video: videoBase64, // now a base64 string instead of a raw buffer
-      filename: videoFilename,
-    });
+    // Create the content parts array
+    const prompt_parts = [
+      { text: prompt },
+      {
+        inlineData: {
+          mimeType: req.file.mimetype,
+          data: videoBuffer.toString("base64"),
+        },
+      },
+    ];
 
-    const summary = result.response.text();
+    // Call the Gemini API with the correct format
+    const result = await model.generateContent(prompt_parts);
+    const response = await result.response;
+    const summary = response.text();
+
     console.log("Summary:", summary);
     res.json({ summary });
   } catch (error) {
