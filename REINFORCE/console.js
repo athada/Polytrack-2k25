@@ -1,11 +1,23 @@
 // Import TensorFlow.js from CDN
-await import("https://cdn.jsdelivr.net/npm/@tensorflow/tfjs");
+// At the top of your file
+async function initTF() {
+  await import("https://cdn.jsdelivr.net/npm/@tensorflow/tfjs");
+  await tf.ready();
+  console.log("TensorFlow.js initialized with backend:", tf.getBackend());
+}
 
+// Make sure to await this before starting your AI
+await initTF();
 // Constants
+const CANVAS_SIZE = 224;
+const N_FRAMES = 8;
 const FRAME_SEQ_LEN = 8;
 const ACTIONS = ["w", "s", "a", "d"];
-const GAME_LEN = 500;
-const SPEED_THRESHOLD = 150;
+const GAME_LEN = 100;
+const SPEED_THRESHOLD = 200;
+const N_EPISODES = 10;
+const N_EPOCHS = 10;
+const BATCH_SIZE = 4;
 
 // Global variables
 let model;
@@ -15,7 +27,6 @@ let gameStates = [];
 let gameActions = [];
 
 // Model-related functions
-// Function to create or load a model
 async function createOrLoadModel(trainMode = false) {
   if (!trainMode) {
     try {
@@ -31,11 +42,10 @@ async function createOrLoadModel(trainMode = false) {
     }
   }
 
-  // Define a small CNN model for sequence of grayscale 224x224 images
   model = tf.sequential();
   model.add(
     tf.layers.conv2d({
-      inputShape: [224, 224, FRAME_SEQ_LEN],
+      inputShape: [CANVAS_SIZE, CANVAS_SIZE, N_FRAMES],
       filters: 8,
       kernelSize: 3,
       activation: "relu",
@@ -48,7 +58,7 @@ async function createOrLoadModel(trainMode = false) {
   model.add(tf.layers.maxPooling2d({ poolSize: 2, strides: 2 }));
   model.add(tf.layers.flatten());
   model.add(tf.layers.dense({ units: 32, activation: "relu" }));
-  model.add(tf.layers.dense({ units: 4, activation: "softmax" })); // 4 outputs for W, S, A, D
+  model.add(tf.layers.dense({ units: 4, activation: "softmax" }));
 
   model.compile({
     optimizer: "adam",
@@ -110,7 +120,7 @@ async function loadLatestModel() {
 }
 
 // Game-related functions
-async function getProcessedCanvasTensors(canvasId, numCaptures) {
+async function getProcessedCanvasTensors(canvasId="`", numCaptures=8) {
   const canvas = document.getElementById(canvasId);
   if (!canvas) {
     console.error("Canvas not found!");
@@ -118,28 +128,35 @@ async function getProcessedCanvasTensors(canvasId, numCaptures) {
   }
 
   const tensors = [];
+  const originalWidth = canvas.width;
+  const originalHeight = canvas.height;
 
   for (let i = 0; i < numCaptures; i++) {
     const offscreenCanvas = document.createElement("canvas");
-    offscreenCanvas.width = 224;
-    offscreenCanvas.height = 224;
-    const ctx = offscreenCanvas.getContext("2d");
+    offscreenCanvas.width = CANVAS_SIZE;
+    offscreenCanvas.height = CANVAS_SIZE;
+    const ctx = offscreenCanvas.getContext("2d", { willReadFrequently: true });
+    ctx.drawImage(
+      canvas,
+      0, 0, originalWidth, originalHeight,
+      0, 0, CANVAS_SIZE, CANVAS_SIZE
+    );
 
-    ctx.drawImage(canvas, 0, 0, 224, 224);
+    const imageData = ctx.getImageData(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+    const grayData = new Float32Array(CANVAS_SIZE * CANVAS_SIZE);
 
-    const imageData = ctx.getImageData(0, 0, 224, 224);
-    const grayData = new Uint8ClampedArray(224 * 224);
     for (let j = 0; j < imageData.data.length; j += 4) {
       const r = imageData.data[j];
       const g = imageData.data[j + 1];
       const b = imageData.data[j + 2];
-      grayData[j / 4] = 0.299 * r + 0.587 * g + 0.114 * b;
+      grayData[j / 4] = (0.299 * r + 0.587 * g + 0.114 * b) / 255.0;
     }
-
-    let tensor = tf.tensor(grayData, [224, 224, 1]);
-    tensors.push(tensor);
+    tensors.push(grayData);
   }
-  return tf.concat(tensors, -1).toFloat().div(tf.scalar(255)).expandDims(0);
+
+  return tf.tidy(() => {
+    return tf.concat(tensors, -1).reshape([1, CANVAS_SIZE, CANVAS_SIZE, numCaptures]);
+  });
 }
 
 function sendKeyPress(key) {
@@ -191,11 +208,18 @@ function getGameData() {
 }
 
 function checkGameOver() {
+  // Check for time announcer
   const hasTimeAnnouncer = document.querySelector(".time-announcer") !== null;
+  
+  // Check for hint show element
+  const hasHintShow = document.querySelector(".hint.show") !== null;
+  
+  // Check speed threshold
   const gameData = getGameData();
   const currentSpeed = gameData.speed ? parseFloat(gameData.speed) : 0;
   const isSpeedTooHigh = currentSpeed > SPEED_THRESHOLD;
-  return hasTimeAnnouncer || isSpeedTooHigh || isInterrupted;
+  
+  return hasTimeAnnouncer || hasHintShow || isSpeedTooHigh || isInterrupted;
 }
 
 function restartGame() {
@@ -216,41 +240,75 @@ function computeDiscountedRewards(rewards, gamma = 0.99) {
     cumulativeReward = rewards[i] + gamma * cumulativeReward;
     discountedRewards.unshift(cumulativeReward);
   }
-  return tf.tensor2d(discountedRewards, [discountedRewards.length, 1]);
+  return tf.tidy(() => {
+    return tf.tensor2d(discountedRewards, [discountedRewards.length, 1]);
+  });
 }
 
-async function trainModel(epochs) {
+async function trainModel(epochs=N_EPOCHS, batchSize = BATCH_SIZE) {
   console.log("Training model...");
-
   if (gameStates.length === 0) return;
 
-  for (let epoch = 0; epoch < epochs; epoch++) {
-    const loss = tf.tidy(() => {
-      const states = tf.concat(gameStates);
-      const actions = tf.tensor1d(gameActions, "int32");
-      const rewards = computeDiscountedRewards(gameRewards);
+  try {
+    for (let epoch = 0; epoch < epochs; epoch++) {
+      // Calculate number of batches
+      const numBatches = Math.ceil(gameStates.length / batchSize);
+      let epochLoss = 0;
 
-      // Use tape to track gradients
-      const actionOneHot = tf.oneHot(actions, 4);
-      const logits = model.predict(states);
-      const logProbs = tf.losses.softmaxCrossEntropy(actionOneHot, logits);
-      return tf.sum(tf.mul(logProbs, rewards));
-    });
+      for (let batch = 0; batch < numBatches; batch++) {
+        const startIdx = batch * batchSize;
+        const endIdx = Math.min(startIdx + batchSize, gameStates.length);
+        
+        let computedTensors = null;
+        try {
+          // Compute tensors for current batch
+          loss = tf.tidy(() => {
+            // Get batch slices
+            const batchStates = gameStates.slice(startIdx, endIdx);
+            const batchActions = gameActions.slice(startIdx, endIdx);
+            const batchRewards = gameRewards.slice(startIdx, endIdx);
 
-    // Optimize using the gradient tape
-    await model.optimizer.minimize(() => loss, true);
-    console.log(`Epoch ${epoch + 1}/${epochs} - Loss: ${loss.dataSync()}`);
-    loss.dispose();
+            const states = tf.concat(batchStates);
+            const actions = tf.tensor1d(batchActions, "int32");
+            const rewards = computeDiscountedRewards(batchRewards);
+            const actionOneHot = tf.oneHot(actions, 4);
+
+            const logits = model.predict(states);
+            const probs = tf.softmax(logits);
+            const logProbs = tf.log(tf.add(probs, tf.scalar(1e-7))); // Add small epsilon to prevent log(0)
+            const actionLogProbs = tf.sum(tf.mul(logProbs, actionOneHot), -1);
+            
+            return tf.neg(tf.mean(tf.mul(actionLogProbs, rewards))).clone();
+          });
+
+          // Get loss value for this batch
+          const lossValue = loss.dataSync();
+          epochLoss += lossValue[0];
+
+          // Optimize on batch
+          await model.optimizer.minimize(() => {
+            return tf.tidy(() => {return loss;});
+          }, true);
+
+        } finally {
+          loss.dispose();
+        }
+      }
+
+      // Log average loss for the epoch
+      const avgLoss = epochLoss / numBatches;
+      console.log(`Epoch ${epoch + 1}/${epochs} - Average Loss: ${avgLoss.toFixed(4)}`);
+    }
+
+    await saveModelWithCleanup(model);
+    console.log("Model trained and saved!");
+  } finally {
+    // Ensure cleanup happens even if training fails
+    gameStates.forEach(tensor => tensor.dispose());
+    gameStates = [];
+    gameActions = [];
+    gameRewards = [];
   }
-
-  await saveModelWithCleanup(model);
-  console.log("Model trained and saved!");
-
-  // Clear experience
-  gameStates.forEach(tensor => tensor.dispose());
-  gameStates = [];
-  gameActions = [];
-  gameRewards = [];
 }
 
 // Prediction and action
@@ -269,21 +327,37 @@ async function predictAndAct(canvasId) {
     return;
   }
 
-  const tensor = await getProcessedCanvasTensors(canvasId, FRAME_SEQ_LEN);
-  if (!tensor) return;
+  try {
+    // Get tensor outside of tidy
+    const tensor = await getProcessedCanvasTensors(canvasId, FRAME_SEQ_LEN);
+    if (!tensor) return;
 
-  const prediction = model.predict(tensor);
-  const probabilities = prediction.dataSync();
-  const actionIndex = probabilities.indexOf(Math.max(...probabilities));
+    // Use tidy for tensor operations
+    const [actionIndex, stateTensor] = tf.tidy(() => {
+      // Clone tensor for storage before any operations
+      const tensorForStorage = tensor.clone();
+      const prediction = model.predict(tensor);
+      const probabilities = prediction.dataSync();
+      const action = probabilities.indexOf(Math.max(...probabilities));
+      return [action, tensorForStorage];
+    });
 
-  gameStates.push(tensor);
-  gameActions.push(actionIndex);
-  gameRewards.push(checkGameOver() ? 1 : 0);
+    // Clean up the original tensor
+    tensor.dispose();
 
-  sendKeyPress(ACTIONS[actionIndex]);
+    // Rest of the code...
+    gameStates.push(stateTensor);
+    gameActions.push(actionIndex);
+    gameRewards.push(checkGameOver() ? 1 : 0);
 
-  if (!checkGameOver()) {
-    requestAnimationFrame(() => predictAndAct(canvasId));
+
+    sendKeyPress(ACTIONS[actionIndex]);
+
+    if (!checkGameOver() && !isInterrupted) {
+      requestAnimationFrame(() => predictAndAct(canvasId));
+    }
+  } catch (error) {
+    console.error("Error in predictAndAct:", error);
   }
 }
 
@@ -296,13 +370,20 @@ window.addEventListener("keydown", (e) => {
 });
 
 // Main training loop
-async function startAI(canvasId, epochs, n_runs) {
+async function startAI(canvasId, epochs = N_EPOCHS, episodes = N_EPISODES) {
   let runCount = 0;
+  await initTF();
   await createOrLoadModel();
   
   const gameInterval = setInterval(async () => {
-    if (runCount >= n_runs) {
-      console.log(`Training completed after ${n_runs} runs!`);
+    if (runCount >= episodes) {
+      console.log(`Training completed after ${episodes} episodes!`);
+      clearInterval(gameInterval);
+      return;
+    }
+
+    if (isInterrupted) {
+      console.log("Training terminated by user");
       clearInterval(gameInterval);
       return;
     }
@@ -312,11 +393,24 @@ async function startAI(canvasId, epochs, n_runs) {
       restartGame();
       await trainModel(epochs);
       runCount++;
-      console.log(`Completed run ${runCount}/${n_runs}`);
-      
+      console.log(`Completed run ${runCount}/${episodes}`);
+
     }
   }, GAME_LEN);
 }
 
-// Start the AI with canvas ID, epochs per training, and number of runs
-startAI("screen", 10, 10);
+// Start the AI with canvas ID
+startAI("screen", N_EPOCHS, N_EPISODES);
+
+setInterval(() => {
+  const memoryInfo = tf.memory();
+  const bytesToGB = bytes => (bytes / 1024 / 1024 / 1024).toFixed(3);
+  
+  console.log('Memory Usage (GB):', {
+    numBytes: bytesToGB(memoryInfo.numBytes) + ' GB',
+    numTensors: memoryInfo.numTensors,
+    numDataBuffers: memoryInfo.numDataBuffers,
+    unreliable: memoryInfo.unreliable,
+    reasons: memoryInfo.unreliable ? memoryInfo.reasons : 'N/A'
+  });
+}, 4000);
