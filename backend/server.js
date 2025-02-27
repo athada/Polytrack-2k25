@@ -4,6 +4,8 @@ const express = require("express");
 const cors = require("cors");
 const multer = require("multer");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
+const fs = require("fs").promises;
+const path = require("path");
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -13,6 +15,40 @@ const upload = multer({ storage: multer.memoryStorage() });
 
 // Enable CORS so your extension can reach your local backend
 app.use(cors());
+
+const API_KEY_FILE = path.join(__dirname, "api-key.json");
+
+// Function to read API key from file
+async function getStoredApiKey() {
+  try {
+    const data = await fs.readFile(API_KEY_FILE, "utf8");
+    const { apiKey } = JSON.parse(data);
+    return apiKey;
+  } catch (error) {
+    return null;
+  }
+}
+
+// Function to store API key to file
+async function storeApiKey(apiKey) {
+  await fs.writeFile(API_KEY_FILE, JSON.stringify({ apiKey }));
+}
+
+// Add endpoints to handle API key
+app.get("/check-api-key", async (req, res) => {
+  const apiKey = await getStoredApiKey();
+  res.json({ hasKey: !!apiKey });
+});
+
+app.post("/set-api-key", express.json(), async (req, res) => {
+  const { apiKey } = req.body;
+  if (!apiKey) {
+    return res.status(400).json({ error: "API key is required" });
+  }
+
+  await storeApiKey(apiKey);
+  res.json({ success: true });
+});
 
 // POST endpoint to receive the video file and prompt
 app.post("/generate-summary", upload.single("video"), async (req, res) => {
@@ -29,8 +65,8 @@ app.post("/generate-summary", upload.single("video"), async (req, res) => {
     const videoBuffer = req.file.buffer;
     const videoFilename = req.file.originalname;
 
-    // Retrieve the Gemini API key from your environment variables
-    const geminiApiKey = process.env.GEMINI_API_KEY;
+    // Get API key from file instead of env
+    const geminiApiKey = await getStoredApiKey();
     if (!geminiApiKey) {
       return res
         .status(500)

@@ -39,6 +39,7 @@ function App() {
   const [isGameplayAvailable, setIsGameplayAvailable] =
     useState<boolean>(false);
   const [statusMessage, setStatusMessage] = useState<string>("");
+  const [hasStoredApiKey, setHasStoredApiKey] = useState(false);
 
   // Add this effect to check gameplay availability when popup opens
   useEffect(() => {
@@ -67,11 +68,27 @@ function App() {
     checkGameplayStatus();
   }, []);
 
+  // Add this effect to check for stored API key when popup opens
+  useEffect(() => {
+    const checkApiKey = async () => {
+      try {
+        const response = await fetch("http://localhost:3001/check-api-key");
+        const data = await response.json();
+        setHasStoredApiKey(data.hasKey);
+      } catch (error) {
+        console.error("Error checking API key:", error);
+      }
+    };
+
+    checkApiKey();
+  }, []);
+
   // Handle form submission
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!apiKey.trim()) {
+    // Only check for API key if we don't have one stored
+    if (!hasStoredApiKey && !apiKey.trim()) {
       setError("API key is required");
       return;
     }
@@ -85,8 +102,23 @@ function App() {
     setError("");
 
     try {
-      // Save API key to chrome storage
-      await chrome.storage.sync.set({ apiKey: apiKey });
+      // Only send API key to backend if we don't have one stored
+      if (!hasStoredApiKey) {
+        const response = await fetch("http://localhost:3001/set-api-key", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ apiKey }),
+        });
+
+        if (!response.ok) {
+          throw new Error("Failed to set API key");
+        }
+
+        setHasStoredApiKey(true);
+        setApiKey(""); // Clear the input
+      }
 
       // Get the current active tab
       const [tab] = await chrome.tabs.query({
@@ -136,13 +168,13 @@ function App() {
       };
 
       // Send message to content script with style-specific prompt
-      const response = await chrome.tabs.sendMessage(tab.id, {
+      const responseContent = await chrome.tabs.sendMessage(tab.id, {
         type: "GENERATE_SUMMARY",
         prompt: stylePrompts[summaryStyle as keyof typeof stylePrompts],
       });
 
-      if (response.error) {
-        throw new Error(response.error);
+      if (responseContent.error) {
+        throw new Error(responseContent.error);
       }
 
       // Close the popup after successful generation
@@ -174,22 +206,31 @@ function App() {
 
       {/* Main Form */}
       <form onSubmit={handleSubmit} className="space-y-4">
-        {/* API Key Input */}
-        <div>
-          <label className="block text-sm font-medium text-gray-300 mb-1">
-            API Key
-            <div className="relative mt-1">
-              <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-              <input
-                type="password"
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 bg-gray-800 border border-gray-700 rounded-md focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400 text-white"
-                placeholder="Enter your API key"
-              />
-            </div>
-          </label>
-        </div>
+        {/* Only show API Key input if no key is stored */}
+        {!hasStoredApiKey && (
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-1">
+              API Key
+              <div className="relative mt-1">
+                <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                <input
+                  type="password"
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 bg-gray-800 border border-gray-700 rounded-md focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400 text-white"
+                  placeholder="Enter your API key"
+                />
+              </div>
+            </label>
+          </div>
+        )}
+
+        {/* Show success message when API key is stored */}
+        {hasStoredApiKey && (
+          <div className="flex items-center gap-2 text-green-400 text-sm">
+            <span>✓ API Key is configured</span>
+          </div>
+        )}
 
         {/* Style Selector */}
         <div>
@@ -251,14 +292,26 @@ function App() {
         {/* Submit Button */}
         <button
           type="submit"
-          disabled={isLoading || !isGameplayAvailable}
+          disabled={
+            isLoading || !isGameplayAvailable || (!hasStoredApiKey && !apiKey)
+          }
           style={{
             backgroundColor:
-              isLoading || !isGameplayAvailable ? "#4B5563" : "#6366F1",
-            color: isLoading || !isGameplayAvailable ? "#9CA3AF" : "white",
+              isLoading || !isGameplayAvailable || (!hasStoredApiKey && !apiKey)
+                ? "#4B5563"
+                : "#6366F1",
+            color:
+              isLoading || !isGameplayAvailable || (!hasStoredApiKey && !apiKey)
+                ? "#9CA3AF"
+                : "white",
             cursor:
-              isLoading || !isGameplayAvailable ? "not-allowed" : "pointer",
-            opacity: isLoading || !isGameplayAvailable ? 0.6 : 1,
+              isLoading || !isGameplayAvailable || (!hasStoredApiKey && !apiKey)
+                ? "not-allowed"
+                : "pointer",
+            opacity:
+              isLoading || !isGameplayAvailable || (!hasStoredApiKey && !apiKey)
+                ? 0.6
+                : 1,
           }}
           className="w-full py-2 px-4 rounded transition-colors hover:bg-indigo-600"
         >
