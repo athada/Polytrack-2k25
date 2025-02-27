@@ -29,16 +29,16 @@ async function getProcessedCanvasTensors(canvasId, numCaptures) {
   for (let i = 0; i < numCaptures; i++) {
     // Create an offscreen canvas for resizing
     const offscreenCanvas = document.createElement("canvas");
-    offscreenCanvas.width = 224;
-    offscreenCanvas.height = 224;
+    offscreenCanvas.width = CANVAS_SIZE;
+    offscreenCanvas.height = CANVAS_SIZE;
     const ctx = offscreenCanvas.getContext("2d");
 
     // Copy and resize the canvas image
-    ctx.drawImage(canvas, 0, 0, 224, 224);
+    ctx.drawImage(canvas, 0, 0, CANVAS_SIZE, CANVAS_SIZE);
 
     // Convert to grayscale
-    const imageData = ctx.getImageData(0, 0, 224, 224);
-    const grayData = new Uint8ClampedArray(224 * 224);
+    const imageData = ctx.getImageData(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+    const grayData = new Uint8ClampedArray(CANVAS_SIZE * CANVAS_SIZE);
     for (let j = 0; j < imageData.data.length; j += 4) {
       const r = imageData.data[j];
       const g = imageData.data[j + 1];
@@ -47,7 +47,7 @@ async function getProcessedCanvasTensors(canvasId, numCaptures) {
     }
 
     // Convert to TensorFlow.js tensor and normalize
-    let tensor = tf.tensor(grayData, [224, 224, 1]);
+    let tensor = tf.tensor(grayData, [CANVAS_SIZE, CANVAS_SIZE, 1]);
       
     // Append tensor to list
     tensors.push(tensor);
@@ -70,9 +70,9 @@ async function createOrLoadModel(trainMode = false) {
     }
   }
 
-  // Define a small CNN model for sequence of grayscale 224x224 images
+  // Define a small CNN model for sequence of grayscale CANVAS_SIZExCANVAS_SIZE images
   model = tf.sequential();
-  model.add(tf.layers.conv2d({inputShape: [224, 224, FRAME_SEQ_LEN], filters: 8, kernelSize: 3, activation: "relu"}));
+  model.add(tf.layers.conv2d({inputShape: [CANVAS_SIZE, CANVAS_SIZE, FRAME_SEQ_LEN], filters: 8, kernelSize: 3, activation: "relu"}));
   model.add(tf.layers.maxPooling2d({ poolSize: 2, strides: 2 }));
   model.add(tf.layers.conv2d({ filters: 16, kernelSize: 3, activation: "relu" }));
   model.add(tf.layers.maxPooling2d({ poolSize: 2, strides: 2 }));

@@ -1,5 +1,5 @@
 import * as tf from "@tensorflow/tfjs";
-const SPEED_THRESHOLD = 600;  // Adjust this value based on your game's speed units
+const SPEED_THRESHOLD = 150;  // Adjust this value based on your game's speed units
 export const CANVAS_SIZE = 200;
 export const FRAME_SEQ_LEN = 120;
 
@@ -8,7 +8,7 @@ const TOTAL_FRAMES = 120;
 export const N_FRAMES = 8;// Number of frames to capture per second
 const FRAME_INTERVAL = Math.floor(TOTAL_FRAMES / N_FRAMES);
 
-export async function captureCanvasFramesAsGrayscaleTensor(sourceCanvasId, targetWidth = 224, targetHeight = 224) {
+export async function getProcessedCanvasTensors(sourceCanvasId, targetWidth = CANVAS_SIZE, targetHeight = CANVAS_SIZE) {
   const sourceCanvas = document.getElementById(sourceCanvasId);
   if (!sourceCanvas) {
     console.error(`Canvas element with id '${sourceCanvasId}' not found!`);
@@ -76,15 +76,15 @@ function checkGameOver() {
   // Check for time announcer
   const hasTimeAnnouncer = document.querySelector(".time-announcer") !== null;
   
+  // Check for hint show element
+  const hasHintShow = document.querySelector(".hint.show") !== null;
+  
   // Check speed threshold
   const gameData = getGameData();
   const currentSpeed = gameData.speed ? parseFloat(gameData.speed) : 0;
   const isSpeedTooHigh = currentSpeed > SPEED_THRESHOLD;
   
-  // Check for interrupt flag
-  const isInterruptTriggered = isInterrupted;
-
-  return hasTimeAnnouncer || isSpeedTooHigh || isInterruptTriggered;
+  return hasTimeAnnouncer || hasHintShow || isSpeedTooHigh || isInterrupted;
 }
 
 // Function to Restart the Game from Checkpoint

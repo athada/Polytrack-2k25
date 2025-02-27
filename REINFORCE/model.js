@@ -18,7 +18,7 @@ export async function createOrLoadModel(trainMode = false) {
     }
   }
 
-  // Define a small CNN model for sequence of grayscale 224x224 images
+  // Define a small CNN model for sequence of grayscale CANVAS_SIZExCANVAS_SIZE images
   model = tf.sequential();
   model.add(
     tf.layers.conv2d({
