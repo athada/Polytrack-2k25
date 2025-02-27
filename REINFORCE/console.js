@@ -17,6 +17,7 @@ const GAME_LEN = 100;
 const SPEED_THRESHOLD = 200;
 const N_EPISODES = 10;
 const N_EPOCHS = 10;
+const BATCH_SIZE = 4;
 
 // Global variables
 let model;
@@ -119,7 +120,7 @@ async function loadLatestModel() {
 }
 
 // Game-related functions
-async function getProcessedCanvasTensors(canvasId, numCaptures) {
+async function getProcessedCanvasTensors(canvasId="`", numCaptures=8) {
   const canvas = document.getElementById(canvasId);
   if (!canvas) {
     console.error("Canvas not found!");
@@ -153,11 +154,9 @@ async function getProcessedCanvasTensors(canvasId, numCaptures) {
     tensors.push(grayData);
   }
 
-  const result = tf.tidy(() => {
+  return tf.tidy(() => {
     return tf.concat(tensors, -1).reshape([1, CANVAS_SIZE, CANVAS_SIZE, numCaptures]);
   });
-
-  return result;
 }
 
 function sendKeyPress(key) {
@@ -246,47 +245,59 @@ function computeDiscountedRewards(rewards, gamma = 0.99) {
   });
 }
 
-async function trainModel(epochs) {
+async function trainModel(epochs=N_EPOCHS, batchSize = BATCH_SIZE) {
   console.log("Training model...");
-
   if (gameStates.length === 0) return;
-
-  // Add check for TensorFlow initialization
-  if (!tf.getBackend()) {
-    await tf.ready();
-    console.log("TensorFlow backend initialized:", tf.getBackend());
-  }
 
   try {
     for (let epoch = 0; epoch < epochs; epoch++) {
-      const loss = await tf.tidy(() => {
-        // Combine all states into one tensor and ensure proper cleanup
-        const states = tf.concat(gameStates);
-        const actions = tf.tensor1d(gameActions, "int32");
-        const rewards = computeDiscountedRewards(gameRewards);
+      // Calculate number of batches
+      const numBatches = Math.ceil(gameStates.length / batchSize);
+      let epochLoss = 0;
 
-        const actionOneHot = tf.oneHot(actions, 4);
-        const logits = model.predict(states);
-        const logProbs = tf.losses.softmaxCrossEntropy(actionOneHot, logits);
-        const totalLoss = tf.sum(tf.mul(logProbs, rewards));
+      for (let batch = 0; batch < numBatches; batch++) {
+        const startIdx = batch * batchSize;
+        const endIdx = Math.min(startIdx + batchSize, gameStates.length);
+        
+        let computedTensors = null;
+        try {
+          // Compute tensors for current batch
+          loss = tf.tidy(() => {
+            // Get batch slices
+            const batchStates = gameStates.slice(startIdx, endIdx);
+            const batchActions = gameActions.slice(startIdx, endIdx);
+            const batchRewards = gameRewards.slice(startIdx, endIdx);
 
-        // Return loss value as a number to avoid tensor leak
-        return totalLoss;
-      }).data();
+            const states = tf.concat(batchStates);
+            const actions = tf.tensor1d(batchActions, "int32");
+            const rewards = computeDiscountedRewards(batchRewards);
+            const actionOneHot = tf.oneHot(actions, 4);
 
-      await model.optimizer.minimize(() => {
-        return tf.tidy(() => {
-          const states = tf.concat(gameStates);
-          const actions = tf.tensor1d(gameActions, "int32");
-          const rewards = computeDiscountedRewards(gameRewards);
-          const actionOneHot = tf.oneHot(actions, 4);
-          const logits = model.predict(states);
-          const logProbs = tf.losses.softmaxCrossEntropy(actionOneHot, logits);
-          return tf.sum(tf.mul(logProbs, rewards));
-        });
-      }, true);
+            const logits = model.predict(states);
+            const probs = tf.softmax(logits);
+            const logProbs = tf.log(tf.add(probs, tf.scalar(1e-7))); // Add small epsilon to prevent log(0)
+            const actionLogProbs = tf.sum(tf.mul(logProbs, actionOneHot), -1);
+            
+            return tf.neg(tf.mean(tf.mul(actionLogProbs, rewards))).clone();
+          });
 
-      console.log(`Epoch ${epoch + 1}/${epochs} - Loss: ${loss[0]}`);
+          // Get loss value for this batch
+          const lossValue = loss.dataSync();
+          epochLoss += lossValue[0];
+
+          // Optimize on batch
+          await model.optimizer.minimize(() => {
+            return tf.tidy(() => {return loss;});
+          }, true);
+
+        } finally {
+          loss.dispose();
+        }
+      }
+
+      // Log average loss for the epoch
+      const avgLoss = epochLoss / numBatches;
+      console.log(`Epoch ${epoch + 1}/${epochs} - Average Loss: ${avgLoss.toFixed(4)}`);
     }
 
     await saveModelWithCleanup(model);
@@ -342,7 +353,7 @@ async function predictAndAct(canvasId) {
 
     sendKeyPress(ACTIONS[actionIndex]);
 
-    if (!checkGameOver()) {
+    if (!checkGameOver() && !isInterrupted) {
       requestAnimationFrame(() => predictAndAct(canvasId));
     }
   } catch (error) {
@@ -390,3 +401,16 @@ async function startAI(canvasId, epochs = N_EPOCHS, episodes = N_EPISODES) {
 
 // Start the AI with canvas ID
 startAI("screen", N_EPOCHS, N_EPISODES);
+
+setInterval(() => {
+  const memoryInfo = tf.memory();
+  const bytesToGB = bytes => (bytes / 1024 / 1024 / 1024).toFixed(3);
+  
+  console.log('Memory Usage (GB):', {
+    numBytes: bytesToGB(memoryInfo.numBytes) + ' GB',
+    numTensors: memoryInfo.numTensors,
+    numDataBuffers: memoryInfo.numDataBuffers,
+    unreliable: memoryInfo.unreliable,
+    reasons: memoryInfo.unreliable ? memoryInfo.reasons : 'N/A'
+  });
+}, 4000);
