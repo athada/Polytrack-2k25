@@ -1,5 +1,4 @@
 // Import TensorFlow.js from CDN
-// At the top of your file
 async function initTF() {
   await import("https://cdn.jsdelivr.net/npm/@tensorflow/tfjs");
   await tf.ready();
@@ -8,16 +7,17 @@ async function initTF() {
 
 // Make sure to await this before starting your AI
 await initTF();
+
 // Constants
 const CANVAS_SIZE = 224;
 const N_FRAMES = 8;
 const FRAME_SEQ_LEN = 8;
 const ACTIONS = ["w", "s", "a", "d"];
-const GAME_LEN = 100;
 const SPEED_THRESHOLD = 200;
-const N_EPISODES = 10;
-const N_EPOCHS = 10;
-const BATCH_SIZE = 4;
+const N_EPISODES = 200;
+const N_EPOCHS = 6;
+const BATCH_SIZE = 5;
+const WAIT_TIME = 100;
 
 // Global variables
 let model;
@@ -37,107 +37,53 @@ window.addEventListener("keydown", (e) => {
 function logMemoryUsage(label = '') {
   const memoryInfo = tf.memory();
   const bytesToGB = bytes => (bytes / 1024 / 1024 / 1024).toFixed(3);
-  
-  console.log(`Memory Usage ${label} (GB):`, {
-    numBytes: bytesToGB(memoryInfo.numBytes) + ' GB',
-    numTensors: memoryInfo.numTensors,
-    numDataBuffers: memoryInfo.numDataBuffers,
-    unreliable: memoryInfo.unreliable,
-    reasons: memoryInfo.unreliable ? memoryInfo.reasons : 'N/A'
-  });
+  console.log(`[Memory Usage] ${label}: numBytes: ${bytesToGB(memoryInfo.numBytes)} GB, numTensors: ${memoryInfo.numTensors}, numDataBuffers: ${memoryInfo.numDataBuffers}`);
 }
 
-// Model-related functions
 async function createOrLoadModel() {
   try {
-      const loadedModel = await loadLatestModel();
+      const loadedModel = await tf.loadLayersModel('indexeddb://model_latest');
+      loadedModel.compile({optimizer: tf.train.adam(0.001), loss: "categoricalCrossentropy", metrics: ["accuracy"]});
       if (loadedModel) {
           model = loadedModel;
           console.log("[Model-Loading] Loaded existing model.");
-          return model;
       }
+      return;
   } catch (error) {
-      console.warn("[Model-Loading] Creating new model because:", error.message);
-  }
-
-  // Create new model if loading failed
-  console.log("[Model-Loading] Creating new model...");
-  model = tf.sequential();
-  model.add(tf.layers.conv2d({
+      console.warn("[Model-Loading] Creating New Model:", error.message);
+      if (loadedModel) {
+        loadedModel.dispose();
+      }
+  } 
+  try {
+    // Create new model if loading failed
+    console.log("[Model-Loading] Creating new model...");
+    model = tf.sequential();
+    model.add(tf.layers.conv2d({
       inputShape: [CANVAS_SIZE, CANVAS_SIZE, N_FRAMES],
       filters: 8,
       kernelSize: 3,
       activation: "relu"
-  }));
-  model.add(tf.layers.maxPooling2d({ poolSize: 2, strides: 2 }));
-  model.add(tf.layers.conv2d({ filters: 16, kernelSize: 3, activation: "relu" }));
-  model.add(tf.layers.maxPooling2d({ poolSize: 2, strides: 2 }));
-  model.add(tf.layers.flatten());
-  model.add(tf.layers.dense({ units: 32, activation: "relu" }));
-  model.add(tf.layers.dense({ units: 4, activation: "softmax" }));
+    }));
+    model.add(tf.layers.maxPooling2d({ poolSize: 2, strides: 2 }));
+    model.add(tf.layers.conv2d({ filters: 16, kernelSize: 3, activation: "relu" }));
+    model.add(tf.layers.maxPooling2d({ poolSize: 2, strides: 2 }));
+    model.add(tf.layers.flatten());
+    model.add(tf.layers.dense({ units: 32, activation: "relu" }));
+    model.add(tf.layers.dense({ units: 4, activation: "softmax" }));
 
-  model.compile({
-      optimizer: tf.train.adam(0.001),
-      loss: "categoricalCrossentropy",
-      metrics: ["accuracy"]
-  });
-
-  console.log("[Model-Loading] Model created and compiled successfully.");
-  return model;
-}
-
-async function cleanupModels() {
-    const models = await tf.io.listModels();
-    const modelKeys = Object.keys(models).filter((key) =>
-      key.startsWith("indexeddb://model_")
-    );
-
-    modelKeys.sort(
-      (a, b) =>
-        models[a].modelArtifactsInfo.dateSaved -
-        models[b].modelArtifactsInfo.dateSaved
-    );
-
-    while (modelKeys.length > 5) {
-      const keyToRemove = modelKeys.shift();
-      await tf.io.removeModel(keyToRemove);
-      console.log(`Removed old model: ${keyToRemove}`);
-    }
-}
-
-async function saveModelWithCleanup(model) {
-  const timestamp = Date.now();
-  const modelKey = `indexeddb://model_${timestamp}`;
-  await model.save(modelKey);
-  console.log(`Model saved as ${modelKey}`);
-  await cleanupModels();
-  return modelKey;
-}
-
-async function loadLatestModel() {
-  const models = await tf.io.listModels();
-  const modelKeys = Object.keys(models).filter((key) =>
-    key.startsWith("indexeddb://model_")
-  );
-
-  if (modelKeys.length === 0) {
-    console.log("No saved models found in IndexedDB.");
-    return null;
+    model.compile({optimizer: tf.train.adam(0.001), loss: "categoricalCrossentropy", metrics: ["accuracy"]});
+    console.log("[Model-Loading] Model created and compiled successfully.");
+  } catch (error) {
+    console.error("[Model-Loading] Error creating model:", error);
+    if (model)
+      model.dispose();
+  } finally {
+    return;
   }
-
-  modelKeys.sort(
-    (a, b) =>
-      models[a].modelArtifactsInfo.dateSaved -
-      models[b].modelArtifactsInfo.dateSaved
-  );
-
-  const latestKey = modelKeys[modelKeys.length - 1];
-  console.log(`Loading latest model: ${latestKey}`);
-  return await tf.loadLayersModel(latestKey);
 }
 
-// Game-related functions
-async function getProcessedCanvasTensors(canvasId="`", numCaptures=8) {
+async function getProcessedCanvasTensors(canvasId="screen", numCaptures=8) {
   const canvas = document.getElementById(canvasId);
   if (!canvas) {
     console.error("Canvas not found!");
@@ -224,19 +170,17 @@ function getGameData() {
   return { currentLap, totalLaps, speed };
 }
 
-function checkGameOver() {
+function checkReachedFinishLine() {
   // Check for time announcer
   const hasTimeAnnouncer = document.querySelector(".time-announcer") !== null;
-  
+  return hasTimeAnnouncer;
+}
+
+function checkGameOver() {  
   // Check for hint show element
   const hasHintShow = document.querySelector(".hint.show") !== null;
-  
-  // Check speed threshold
-  const gameData = getGameData();
-  const currentSpeed = gameData.speed ? parseFloat(gameData.speed) : 0;
-  const isSpeedTooHigh = currentSpeed > SPEED_THRESHOLD;
-  
-  return hasTimeAnnouncer || hasHintShow || isSpeedTooHigh || isInterrupted;
+  const speed = getGameData().speed;
+  return hasHintShow || isInterrupted || speed > SPEED_THRESHOLD;
 }
 
 function restartGame() {
@@ -246,10 +190,9 @@ function restartGame() {
     () => document.dispatchEvent(new KeyboardEvent("keyup", eventOptions)),
     50
   );
-  console.log("Game restarted from beginning!");
+  console.log("[Game-Restart]");
 }
 
-// Training functions
 function computeDiscountedRewards(rewards, gamma = 0.99) {
   let discountedRewards = [];
   let cumulativeReward = 0;
@@ -263,9 +206,14 @@ function computeDiscountedRewards(rewards, gamma = 0.99) {
 }
 
 async function trainModel(epochs=N_EPOCHS, batchSize = BATCH_SIZE) {
-  console.log("[Exploitation] Training Model");
+  console.log("[Exploit] Training Model");
+  logMemoryUsage('[Exploit] Before');
   if (gameStates.length === 0){
-    console.log("[Exploitation] No Episodic Data");
+    console.log("[Exploit] No Episodic Data");
+    return;
+  }
+  if (!model) {
+    console.error("[Exploit] Model not initialized!");
     return;
   }
 
@@ -328,17 +276,18 @@ async function trainModel(epochs=N_EPOCHS, batchSize = BATCH_SIZE) {
           }, true);
 
         } finally {
-          loss.dispose();
+          if (loss) loss.dispose();
         }
       }
 
       // Log average loss for the epoch
       const avgLoss = epochLoss / numBatches;
-      console.log(`[Exploitation] Epoch ${epoch + 1}/${epochs} - Average Loss: ${avgLoss.toFixed(4)}`);
+      console.log(`[Exploit] Epoch ${epoch + 1}/${epochs} - Average Loss: ${avgLoss.toFixed(6)}`);
     }
 
-    await saveModelWithCleanup(model);
-    console.log("[Exploitation] Model trained and saved!");
+    await model.save(`indexeddb://model_latest`);
+    console.log("[Exploit] Model Trained and Saved!");
+
   } finally {
     // Ensure cleanup happens even if training fails
     gameStates.forEach(tensor => tensor.dispose());
@@ -351,7 +300,7 @@ async function trainModel(epochs=N_EPOCHS, batchSize = BATCH_SIZE) {
 async function predictAndAct(canvasId, episodeLength = 100) {
 
   if (!model) {
-    console.error("[Exploration] Model not initialized!");
+    console.error("[Explore] Model not initialized!");
     return;
   }
 
@@ -360,11 +309,11 @@ async function predictAndAct(canvasId, episodeLength = 100) {
   let stateTensor = null;
   
   try {
-    while (stepCount < episodeLength && !isInterrupted) {
+    while (stepCount < episodeLength && !checkReachedFinishLine() && !checkGameOver()) {
       try {
         tensor = await getProcessedCanvasTensors(canvasId, FRAME_SEQ_LEN);
         if (!tensor) {
-          console.error("[Exploration] Failed to get canvas tensors");
+          console.error("[Explore] Failed to get canvas tensors");
           break;
         }
         // Use tidy for tensor operations
@@ -386,36 +335,44 @@ async function predictAndAct(canvasId, episodeLength = 100) {
         sendKeyPress(ACTIONS[actionIndex]);
         stepCount++;
 
+        // Wait for WAIT_TIME milliseconds
+        await new Promise(resolve => setTimeout(resolve, WAIT_TIME));
+
       } finally {
         // Clean up input tensor after each step
         if (tensor) {
           tensor.dispose();
           tensor = null;
         }
+        isInterrupted = false;
       }
     }
 
   } catch (error) {
-    console.error("[Exploration] Error in predictAndAct:", error);
+    console.error("[Explore] Error in predictAndAct:", error);
   } finally {
-    console.log(`[Exploration] Episode completed after ${stepCount} steps`);
+    console.log(`[Explore] Episode completed after ${stepCount} steps`);
   }
 }
 
-// Usage in trainingLoop:
-async function trainingLoop(numIterations = 10, episodeLength = 100, epochs = 10, batchSize=BATCH_SIZE) {
+async function trainingLoop(numIterations = 10, episodeLength = N_EPISODES, epochs = N_EPOCHS, batchSize=BATCH_SIZE) {
+  await createOrLoadModel();
+
   for (let i = 0; i < numIterations; i++) {
-    console.log(`\n[Exploration-Exploitation] Iteration ${i + 1}/${numIterations}`);
+    console.log("-".repeat(50));
+    console.log(`[Explore-Exploit] Iteration ${i + 1}/${numIterations}`);
+    console.log("-".repeat(50));
+    logMemoryUsage('[Explore-Exploit] Before');
     
-    // Explore: Collect experiences
-    logMemoryUsage('[Exploration] Before');
+    tf.engine().startScope();
+
     restartGame();
     await predictAndAct("screen", episodeLength);
-    logMemoryUsage('[Exploration] After');
-
-    // Exploit: Train on collected experiences
-    logMemoryUsage('[Exploitation] Before');
     await trainModel(epochs, batchSize);
-    logMemoryUsage('[Exploitation] After');
+
+    tf.engine().endScope();
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    logMemoryUsage('[Explore-Exploit] After');
   }
 }
