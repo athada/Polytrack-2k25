@@ -356,13 +356,13 @@ async function predictAndAct(canvasId, episodeLength = 100) {
 }
 
 async function trainingLoop(numIterations = 10, episodeLength = N_EPISODES, epochs = N_EPOCHS, batchSize=BATCH_SIZE) {
+  logMemoryUsage('[Explore-Exploit] Initiation');
   await createOrLoadModel();
 
   for (let i = 0; i < numIterations; i++) {
     console.log("-".repeat(50));
     console.log(`[Explore-Exploit] Iteration ${i + 1}/${numIterations}`);
     console.log("-".repeat(50));
-    logMemoryUsage('[Explore-Exploit] Before');
     
     tf.engine().startScope();
 
@@ -371,8 +371,8 @@ async function trainingLoop(numIterations = 10, episodeLength = N_EPISODES, epoc
     await trainModel(epochs, batchSize);
 
     tf.engine().endScope();
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    await new Promise(resolve => setTimeout(resolve, 2000));
 
-    logMemoryUsage('[Explore-Exploit] After');
+    logMemoryUsage('[Explore-Exploit]');
   }
 }
