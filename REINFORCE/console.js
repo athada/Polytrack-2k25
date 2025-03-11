@@ -10,8 +10,7 @@ await initTF();
 
 // Constants
 const CANVAS_SIZE = 224;
-const N_FRAMES = 8;
-const FRAME_SEQ_LEN = 8;
+const N_FRAMES = 4;
 const ACTIONS = ["w", "s", "a", "d"];
 const SPEED_THRESHOLD = 200;
 const N_EPISODES = 200;
@@ -25,6 +24,13 @@ let isInterrupted = false;
 let gameRewards = [];
 let gameStates = [];
 let gameActions = [];
+
+// Constants for rewards
+const REWARDS = {
+  R_EXISTENCE: -0.01,    // Small negative reward per step
+  R_CHECKPOINT: 10.0,    // Reward for completing a lap
+  R_FINISH: 50.0,        // Reward for finishing the game
+};
 
 // Event listener for interruption
 window.addEventListener("keydown", (e) => {
@@ -50,26 +56,17 @@ async function createOrLoadModel() {
       }
       return;
   } catch (error) {
-      console.warn("[Model-Loading] Creating New Model:", error.message);
-      if (loadedModel) {
-        loadedModel.dispose();
-      }
+      console.warn("[Model-Loading] Creating New Model:", error.message)
   } 
   try {
     // Create new model if loading failed
     console.log("[Model-Loading] Creating new model...");
     model = tf.sequential();
-    model.add(tf.layers.conv2d({
-      inputShape: [CANVAS_SIZE, CANVAS_SIZE, N_FRAMES],
-      filters: 8,
-      kernelSize: 3,
-      activation: "relu"
-    }));
+    model.add(tf.layers.conv2d({inputShape: [CANVAS_SIZE, CANVAS_SIZE, N_FRAMES],filters: 8,kernelSize: 3, activation: "relu"}));
     model.add(tf.layers.maxPooling2d({ poolSize: 2, strides: 2 }));
     model.add(tf.layers.conv2d({ filters: 16, kernelSize: 3, activation: "relu" }));
     model.add(tf.layers.maxPooling2d({ poolSize: 2, strides: 2 }));
     model.add(tf.layers.flatten());
-    model.add(tf.layers.dense({ units: 32, activation: "relu" }));
     model.add(tf.layers.dense({ units: 4, activation: "softmax" }));
 
     model.compile({optimizer: tf.train.adam(0.001), loss: "categoricalCrossentropy", metrics: ["accuracy"]});
@@ -83,7 +80,7 @@ async function createOrLoadModel() {
   }
 }
 
-async function getProcessedCanvasTensors(canvasId="screen", numCaptures=8) {
+async function getProcessedCanvasTensors(canvasId="screen", numCaptures=N_FRAMES) {
   const canvas = document.getElementById(canvasId);
   if (!canvas) {
     console.error("Canvas not found!");
@@ -150,6 +147,7 @@ function getGameData() {
   let currentLap = null;
   let totalLaps = null;
   let speed = null;
+  let gameCompleted = document.querySelector(".hint.show") !== null;
 
   if (checkpointEl) {
     const span = checkpointEl.querySelector("span");
@@ -167,7 +165,7 @@ function getGameData() {
     }
   }
 
-  return { currentLap, totalLaps, speed };
+  return { currentLap, totalLaps, speed, gameCompleted };
 }
 
 function checkReachedFinishLine() {
@@ -287,6 +285,7 @@ async function trainModel(epochs=N_EPOCHS, batchSize = BATCH_SIZE) {
 
     await model.save(`indexeddb://model_latest`);
     console.log("[Exploit] Model Trained and Saved!");
+    logRewardStats();
 
   } finally {
     // Ensure cleanup happens even if training fails
@@ -297,8 +296,31 @@ async function trainModel(epochs=N_EPOCHS, batchSize = BATCH_SIZE) {
   }
 }
 
-async function predictAndAct(canvasId, episodeLength = 100) {
+function calculateReward(previousGameState, currentGameState) {
+  let reward = REWARDS.R_EXISTENCE;  // Base penalty for existing
+  
+  if (!previousGameState)
+    return reward;
+  else if (currentGameState.currentLap > previousGameState.currentLap)
+      return (reward + REWARDS.R_CHECKPOINT);
+  else if (currentGameState.gameCompleted && !previousGameState.gameCompleted) 
+      return (reward + REWARDS.R_FINISH);
+  return reward;
+}
 
+function logRewardStats() {
+  const totalReward = gameRewards.reduce((sum, reward) => sum + reward, 0);
+  const steps = gameRewards.length;
+  console.log("[Rewards] Episode Statistics:", {
+      totalReward: totalReward.toFixed(2),
+      averageReward: (totalReward / steps).toFixed(2),
+      steps: steps,
+      existencePenalty: (REWARDS.R_EXISTENCE * steps).toFixed(2),
+      checkpointRewards: gameRewards.filter(r => r > REWARDS.R_EXISTENCE).length
+  });
+}
+
+async function predictAndAct(canvasId, episodeLength = 100) {
   if (!model) {
     console.error("[Explore] Model not initialized!");
     return;
@@ -307,11 +329,14 @@ async function predictAndAct(canvasId, episodeLength = 100) {
   let stepCount = 0;
   let tensor = null;
   let stateTensor = null;
+  let previousGameState = null;
   
   try {
     while (stepCount < episodeLength && !checkReachedFinishLine() && !checkGameOver()) {
       try {
-        tensor = await getProcessedCanvasTensors(canvasId, FRAME_SEQ_LEN);
+        const currentGameState = getGameData();
+        const reward = calculateReward(previousGameState, currentGameState);
+        tensor = await getProcessedCanvasTensors(canvasId, N_FRAMES);
         if (!tensor) {
           console.error("[Explore] Failed to get canvas tensors");
           break;
@@ -329,11 +354,12 @@ async function predictAndAct(canvasId, episodeLength = 100) {
         stateTensor = newStateTensor;
         gameStates.push(stateTensor);
         gameActions.push(actionIndex);
-        gameRewards.push(checkGameOver() ? 1 : 0);
+        gameRewards.push(reward);
 
         // Send action to game
         sendKeyPress(ACTIONS[actionIndex]);
         stepCount++;
+        previousGameState = {...currentGameState};
 
         // Wait for WAIT_TIME milliseconds
         await new Promise(resolve => setTimeout(resolve, WAIT_TIME));
@@ -374,5 +400,57 @@ async function trainingLoop(numIterations = 10, episodeLength = N_EPISODES, epoc
     await new Promise(resolve => setTimeout(resolve, 2000));
 
     logMemoryUsage('[Explore-Exploit]');
+  }
+}
+
+async function freePlay(canvasId="screen", episodeLength = 100) {
+  if (!model) {
+    console.error("[Explore] Model not initialized!");
+    return;
+  }
+
+  let stepCount = 0;
+  let tensor = null;
+  let stateTensor = null;
+  let previousGameState = null;
+  
+  try {
+    while (stepCount < episodeLength && !checkReachedFinishLine()) {
+      try {
+        const currentGameState = getGameData();
+        tensor = await getProcessedCanvasTensors(canvasId, N_FRAMES);
+        if (!tensor) {
+          console.error("[Explore] Failed to get canvas tensors");
+          break;
+        }
+        // Use tidy for tensor operations
+        const actionIndex = tf.tidy(() => {
+          const tensorForStorage = tensor.clone();
+          const prediction = model.predict(tensor);
+          const probabilities = prediction.dataSync();
+          const action = probabilities.indexOf(Math.max(...probabilities));
+          return action;
+        });
+
+        // Send action to game
+        sendKeyPress(ACTIONS[actionIndex]);
+        stepCount++;
+        previousGameState = {...currentGameState};
+
+        // Wait for WAIT_TIME milliseconds
+        await new Promise(resolve => setTimeout(resolve, WAIT_TIME));
+
+      } finally {
+        // Clean up input tensor after each step
+        if (tensor) {
+          tensor.dispose();
+          tensor = null;
+        }
+        isInterrupted = false;
+      }
+    }
+
+  } catch (error) {
+    console.error("[Explore] Error in freePlay:", error);
   }
 }
