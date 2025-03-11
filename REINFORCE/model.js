@@ -56,11 +56,7 @@ export async function cleanupModels() {
   );
 
   // Sort keys by their saved timestamp (oldest first)
-  modelKeys.sort(
-    (a, b) =>
-      models[a].modelArtifactsInfo.dateSaved -
-      models[b].modelArtifactsInfo.dateSaved
-  );
+  modelKeys.sort((a, b) => models[a].dateSaved - models[b].dateSaved);
 
   // Remove the oldest models if more than 5 exist
   while (modelKeys.length > 5) {
@@ -101,11 +97,7 @@ export async function loadLatestModel() {
   }
 
   // Sort the model keys by the dateSaved (oldest first)
-  modelKeys.sort(
-    (a, b) =>
-      models[a].modelArtifactsInfo.dateSaved -
-      models[b].modelArtifactsInfo.dateSaved
-  );
+  modelKeys.sort((a, b) => models[a].dateSaved - models[b].dateSaved);
 
   // Get the latest model key (the one with the most recent timestamp)
   const latestKey = modelKeys[modelKeys.length - 1];
@@ -114,3 +106,153 @@ export async function loadLatestModel() {
   // Load and return the latest model
   return await tf.loadLatestModel(latestKey);
 }
+
+export async function downloadModel(modelKey) {
+  try {
+    // If no specific key provided, get the latest model
+    if (!modelKey) {
+      const models = await tf.io.listModels();
+      const modelKeys = Object.keys(models).filter((key) =>
+        key.startsWith("indexeddb://model_")
+      );
+
+      if (modelKeys.length === 0) {
+        throw new Error("No models found in IndexedDB");
+      }
+
+      // Sort by date saved and get the latest
+      modelKeys.sort((a, b) => models[a].dateSaved - models[b].dateSaved);
+
+      modelKey = modelKeys[modelKeys.length - 1];
+    }
+
+    // Load the model from IndexedDB
+    const model = await tf.loadLayersModel(modelKey);
+
+    // Create a download filename based on the timestamp
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const downloadPath = `downloads://reinforcement-model-${timestamp}`;
+
+    // Save to downloads (triggers browser download)
+    await model.save(downloadPath);
+    console.log(`Model downloaded from ${modelKey}`);
+    return true;
+  } catch (error) {
+    console.error("Error downloading model:", error);
+    return false;
+  }
+}
+
+export async function uploadModel(jsonFile, weightsFile) {
+  try {
+    if (!jsonFile || !weightsFile) {
+      throw new Error("Both JSON and weights files are required.");
+    }
+
+    // Verify file types
+    if (!jsonFile.name.endsWith(".json")) {
+      throw new Error("First file must be a JSON file (.json)");
+    }
+
+    if (
+      !weightsFile.name.includes(".weights.bin") &&
+      !weightsFile.name.endsWith(".bin")
+    ) {
+      throw new Error(
+        "Second file must be a weights file (.bin or .weights.bin)"
+      );
+    }
+
+    console.log("Processing model files:", {
+      jsonFile: jsonFile.name,
+      weightsFile: weightsFile.name,
+    });
+
+    // Use tf.io.browserFiles with the two specific files
+    const uploadedModel = await tf.loadLayersModel(
+      tf.io.browserFiles([jsonFile, weightsFile])
+    );
+
+    // Save the uploaded model to IndexedDB with a new timestamp
+    const timestamp = Date.now();
+    const modelKey = `indexeddb://model_${timestamp}`;
+    await uploadedModel.save(modelKey);
+
+    console.log(`Model uploaded and saved as ${modelKey}`);
+
+    // Cleanup old models
+    await cleanupModels();
+
+    return modelKey;
+  } catch (error) {
+    console.error("Error uploading model:", error);
+    return null;
+  }
+}
+
+export function createModelFileInput(onUploadComplete) {
+  const fileInput = document.createElement("input");
+  fileInput.type = "file";
+  fileInput.multiple = true;
+  fileInput.accept = ".json, .bin"; // Model files are usually JSON + binary weights
+  fileInput.style.display = "none";
+
+  fileInput.addEventListener("change", async (e) => {
+    if (e.target.files.length >= 2) {
+      // Find the JSON file and weights file
+      const jsonFile = Array.from(e.target.files).find((file) =>
+        file.name.endsWith(".json")
+      );
+      const weightsFile = Array.from(e.target.files).find(
+        (file) =>
+          file.name.includes(".weights.bin") || file.name.endsWith(".bin")
+      );
+
+      if (jsonFile && weightsFile) {
+        const modelKey = await uploadModel(jsonFile, weightsFile);
+        if (modelKey && typeof onUploadComplete === "function") {
+          onUploadComplete(modelKey);
+        }
+      } else {
+        console.error("Please select both a .json and a .weights.bin file");
+      }
+    } else {
+      console.error(
+        "Please select at least 2 files: model.json and weights.bin"
+      );
+    }
+  });
+
+  document.body.appendChild(fileInput);
+  return fileInput;
+}
+
+// To use the uploadModel function, you can use the following code:
+
+/*
+
+const fileInput = createModelFileInput((modelKey) => {
+  console.log(`Model uploaded successfully as ${modelKey}`);
+  // Optionally reload the model
+});
+fileInput.click();
+
+*/
+
+//To use a custom input, you can use the following code:
+
+/*
+
+const jsonFileInput = document.getElementById('json-file-input');
+const weightsFileInput = document.getElementById('weights-file-input');
+
+uploadModel(jsonFileInput.files[0], weightsFileInput.files[0])
+  .then(modelKey => {
+    if (modelKey) {
+      console.log("Model uploaded successfully!");
+    } else {
+      console.log("Model upload failed.");
+    }
+  });
+
+  */
