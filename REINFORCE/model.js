@@ -143,40 +143,88 @@ export async function downloadModel(modelKey) {
   }
 }
 
-export async function uploadModel(jsonFile, weightsFile) {
+export async function uploadModel(files) {
   try {
-    if (!jsonFile || !weightsFile) {
-      throw new Error("Both JSON and weights files are required.");
-    }
-
-    // Verify file types
-    if (!jsonFile.name.endsWith(".json")) {
-      throw new Error("First file must be a JSON file (.json)");
-    }
-
-    if (
-      !weightsFile.name.includes(".weights.bin") &&
-      !weightsFile.name.endsWith(".bin")
-    ) {
+    if (!files || files.length < 2) {
       throw new Error(
-        "Second file must be a weights file (.bin or .weights.bin)"
+        "At least one JSON file and one weights file are required."
       );
+    }
+
+    // Find the JSON model file
+    const jsonFile = Array.from(files).find(
+      (file) => file.name.endsWith(".json") && !file.name.includes("metadata")
+    );
+
+    // Find the metadata file
+    const metadataFile = Array.from(files).find((file) =>
+      file.name.includes("metadata.json")
+    );
+
+    // Find all weight shard files (.bin)
+    const weightFiles = Array.from(files).filter((file) =>
+      file.name.endsWith(".bin")
+    );
+
+    if (!jsonFile) {
+      throw new Error("Model architecture file (.json) is required");
+    }
+
+    if (weightFiles.length === 0) {
+      throw new Error("At least one weights file (.bin) is required");
     }
 
     console.log("Processing model files:", {
       jsonFile: jsonFile.name,
-      weightsFile: weightsFile.name,
+      metadataFile: metadataFile ? metadataFile.name : "None",
+      weightFiles: weightFiles.map((f) => f.name),
     });
 
-    // Use tf.io.browserFiles with the two specific files
+    // If we have a metadata file, read it first
+    let metadata = null;
+    if (metadataFile) {
+      const metadataContent = await new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (e) => resolve(e.target.result);
+        reader.readAsText(metadataFile);
+      });
+
+      metadata = JSON.parse(metadataContent);
+      console.log("Model metadata:", metadata);
+    }
+
+    // Create a model load options object
+    const loadOptions = {};
+
+    // If we have input shape information from metadata, use it
+    if (metadata && metadata.inputShape) {
+      console.log(`Using input shape from metadata: [${metadata.inputShape}]`);
+      loadOptions.inputShape = metadata.inputShape;
+    }
+
+    // Use tf.io.browserFiles with all files (json + all weight shards)
     const uploadedModel = await tf.loadLayersModel(
-      tf.io.browserFiles([jsonFile, weightsFile])
+      tf.io.browserFiles([jsonFile, ...weightFiles]),
+      loadOptions
+    );
+
+    // If model loaded, check the input shape
+    console.log(
+      "Model loaded successfully, input shape:",
+      uploadedModel.inputs[0].shape
     );
 
     // Save the uploaded model to IndexedDB with a new timestamp
     const timestamp = Date.now();
     const modelKey = `indexeddb://model_${timestamp}`;
     await uploadedModel.save(modelKey);
+
+    // If we have metadata, also store it with the model
+    if (metadata) {
+      // Save metadata in localStorage with a matching key
+      localStorage.setItem(`${modelKey}_metadata`, JSON.stringify(metadata));
+      console.log(`Model metadata saved with key ${modelKey}_metadata`);
+    }
 
     console.log(`Model uploaded and saved as ${modelKey}`);
 
@@ -194,31 +242,33 @@ export function createModelFileInput(onUploadComplete) {
   const fileInput = document.createElement("input");
   fileInput.type = "file";
   fileInput.multiple = true;
-  fileInput.accept = ".json, .bin"; // Model files are usually JSON + binary weights
+  fileInput.accept = ".json, .bin"; // Accept JSON and bin files
   fileInput.style.display = "none";
 
   fileInput.addEventListener("change", async (e) => {
     if (e.target.files.length >= 2) {
-      // Find the JSON file and weights file
-      const jsonFile = Array.from(e.target.files).find((file) =>
+      // Check if we have at least one JSON file and one bin file
+      const hasJsonFile = Array.from(e.target.files).some((file) =>
         file.name.endsWith(".json")
       );
-      const weightsFile = Array.from(e.target.files).find(
-        (file) =>
-          file.name.includes(".weights.bin") || file.name.endsWith(".bin")
+
+      const hasBinFile = Array.from(e.target.files).some((file) =>
+        file.name.endsWith(".bin")
       );
 
-      if (jsonFile && weightsFile) {
-        const modelKey = await uploadModel(jsonFile, weightsFile);
+      if (hasJsonFile && hasBinFile) {
+        const modelKey = await uploadModel(e.target.files);
         if (modelKey && typeof onUploadComplete === "function") {
           onUploadComplete(modelKey);
         }
       } else {
-        console.error("Please select both a .json and a .weights.bin file");
+        console.error(
+          "Please select at least one .json file and one or more .bin weight files"
+        );
       }
     } else {
       console.error(
-        "Please select at least 2 files: model.json and weights.bin"
+        "Please select at least 2 files: model.json, metadata.json (optional), and at least one weights file (.bin)"
       );
     }
   });
