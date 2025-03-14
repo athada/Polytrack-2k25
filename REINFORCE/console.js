@@ -17,7 +17,7 @@ const N_EPISODES = 200;
 const N_EPOCHS = 6;
 const BATCH_SIZE = 5;
 const WAIT_TIME = 100;
-
+const BEST_MODEL_KEY = "indexeddb://model_latest";
 // Global variables
 let model;
 let isInterrupted = false;
@@ -48,7 +48,7 @@ function logMemoryUsage(label = '') {
 
 async function createOrLoadModel() {
   try {
-      const loadedModel = await tf.loadLayersModel('indexeddb://model_latest');
+      const loadedModel = await tf.loadLayersModel(BEST_MODEL_KEY);
       loadedModel.compile({optimizer: tf.train.adam(0.001), loss: "categoricalCrossentropy", metrics: ["accuracy"]});
       if (loadedModel) {
           model = loadedModel;
@@ -283,7 +283,7 @@ async function trainModel(epochs=N_EPOCHS, batchSize = BATCH_SIZE) {
       console.log(`[Exploit] Epoch ${epoch + 1}/${epochs} - Average Loss: ${avgLoss.toFixed(6)}`);
     }
 
-    await model.save(`indexeddb://model_latest`);
+    await model.save(BEST_MODEL_KEY);
     console.log("[Exploit] Model Trained and Saved!");
     logRewardStats();
 
@@ -320,7 +320,7 @@ function logRewardStats() {
   });
 }
 
-async function predictAndAct(canvasId, episodeLength = 100) {
+async function predictAndAct(canvasId="screen", episodeLength = 100) {
   if (!model) {
     console.error("[Explore] Model not initialized!");
     return;
@@ -406,7 +406,8 @@ async function trainingLoop(numIterations = 10, episodeLength = N_EPISODES, epoc
 async function freePlay(canvasId="screen", episodeLength = 100) {
   if (!model) {
     console.error("[Free-Play] Model not initialized. Upload a Model to Play.");
-    selectModelFiles();
+    //Load the model
+    await createOrLoadModel();
   }
 
   let stepCount = 0;
@@ -455,105 +456,86 @@ async function freePlay(canvasId="screen", episodeLength = 100) {
   }
 }
 
-async function uploadModelToIndexedDB(dbName, storeName) {
-  if (!window.showDirectoryPicker) {
-      console.error("Directory picker API is not supported in this browser.");
-      return;
-  }
-
+async function uploadModel(jsonFile, weightsFile) {
   try {
-      // Open IndexedDB
-      const request = indexedDB.open(dbName, 1);
-      request.onupgradeneeded = (event) => {
-          let db = event.target.result;
-          if (!db.objectStoreNames.contains(storeName)) {
-              db.createObjectStore(storeName, { keyPath: "name" });
-          }
-      };
+    if (!jsonFile || !weightsFile) {
+      throw new Error("Both JSON and weights files are required.");
+    }
 
-      const db = await new Promise((resolve, reject) => {
-          request.onsuccess = () => resolve(request.result);
-          request.onerror = () => reject(request.error);
-      });
+    // Verify file types
+    if (!jsonFile.name.endsWith(".json")) {
+      throw new Error("First file must be a JSON file (.json)");
+    }
 
-      // Open directory picker
-      const dirHandle = await window.showDirectoryPicker();
-      for await (const [name, fileHandle] of dirHandle) {
-          if (fileHandle.kind === "file") {
-              const file = await fileHandle.getFile();
-              const reader = new FileReader();
-              reader.readAsArrayBuffer(file);
-              
-              await new Promise((resolve) => {
-                  reader.onload = async (event) => {
-                      const transaction = db.transaction(storeName, "readwrite");
-                      const store = transaction.objectStore(storeName);
-                      await store.put({ name, data: event.target.result });
-                      resolve();
-                  };
-              });
-          }
-      }
+    if (
+      !weightsFile.name.includes(".weights.bin") &&
+      !weightsFile.name.endsWith(".bin")
+    ) {
+      throw new Error(
+        "Second file must be a weights file (.bin or .weights.bin)"
+      );
+    }
 
-      console.log("Model files uploaded to IndexedDB successfully.");
+    console.log("Processing model files:", {
+      jsonFile: jsonFile.name,
+      weightsFile: weightsFile.name,
+    });
+
+    // Use tf.io.browserFiles with the two specific files
+    const uploadedModel = await tf.loadLayersModel(
+      tf.io.browserFiles([jsonFile, weightsFile])
+    );
+
+    // Save the uploaded model to IndexedDB with a new timestamp
+    await uploadedModel.save(BEST_MODEL_KEY);
+    console.log(`Model uploaded and saved as ${BEST_MODEL_KEY}`);
+
   } catch (error) {
-      console.error("Error uploading model files to IndexedDB:", error);
+    console.error("Error uploading model:", error);
   }
 }
 
-async function loadModelManuallyFromIndexedDB(dbName, storeName) {
-  try {
-      const request = indexedDB.open(dbName, 1);
-      const db = await new Promise((resolve, reject) => {
-          request.onsuccess = () => resolve(request.result);
-          request.onerror = () => reject(request.error);
-      });
+function createModelFileInput(onUploadComplete) {
+  const fileInput = document.createElement("input");
+  fileInput.type = "file";
+  fileInput.multiple = true;
+  fileInput.accept = ".json, .bin"; // Model files are usually JSON + binary weights
+  fileInput.style.display = "none";
 
-      const transaction = db.transaction(storeName, "readonly");
-      const store = transaction.objectStore(storeName);
-      const modelFiles = await new Promise((resolve, reject) => {
-          const files = {};
-          const cursorRequest = store.openCursor();
-
-          cursorRequest.onsuccess = (event) => {
-              const cursor = event.target.result;
-              if (cursor) {
-                  files[cursor.value.name] = cursor.value.data;
-                  cursor.continue();
-              } else {
-                  resolve(files);
-              }
-          };
-          cursorRequest.onerror = () => reject(cursorRequest.error);
-      });
-
-      if (!modelFiles["model.json"]) {
-          throw new Error("model.json file is missing in IndexedDB");
-      }
-
-      // Convert model.json to a File object
-      const modelJsonFile = new Blob([modelFiles["model.json"]], { type: "application/json" });
-      const modelJsonText = await modelJsonFile.text();
-
-      // Sort weight files
-      const weightFiles = Object.keys(modelFiles)
-          .filter(name => name.endsWith(".bin"))
-          .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
-
-      // Convert binary data to File objects
-      const binFiles = weightFiles.map(name =>
-          new File([modelFiles[name]], name, { type: "application/octet-stream" })
+  fileInput.addEventListener("change", async (e) => {
+    if (e.target.files.length >= 2) {
+      // Find the JSON file and weights file
+      const jsonFile = Array.from(e.target.files).find((file) =>
+        file.name.endsWith(".json")
+      );
+      const weightsFile = Array.from(e.target.files).find(
+        (file) =>
+          file.name.includes(".weights.bin") || file.name.endsWith(".bin")
       );
 
-      // Load the model using browserFiles
-      const model = await tf.loadLayersModel(tf.io.browserFiles([
-          new File([modelJsonText], "model.json", { type: "application/json" }),
-          ...binFiles
-      ]));
+      if (jsonFile && weightsFile) {
+        const modelKey = await uploadModel(jsonFile, weightsFile);
+        if (modelKey && typeof onUploadComplete === "function") {
+          onUploadComplete(modelKey);
+        }
+      } else {
+        console.error("Please select both a .json and a .weights.bin file");
+      }
+    } else {
+      console.error(
+        "Please select at least 2 files: model.json and weights.bin"
+      );
+    }
+  });
 
-      console.log("Model loaded successfully.");
-      return model;
-  } catch (error) {
-      console.error("Error loading model from IndexedDB:", error);
-  }
+  document.body.appendChild(fileInput);
+  return fileInput;
+}
+
+function selectModelFiles() {
+  const fileInput = createModelFileInput((modelKey) => {
+    console.log(`Model uploaded successfully as ${modelKey}`);
+    // Optionally reload the model
+  });
+  fileInput.click();
 }

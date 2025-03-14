@@ -3,8 +3,8 @@
 # Script to set up a TensorFlow/tfjs environment on macOS with Apple Silicon (M3 Pro) using Conda
 
 # --- Configuration ---
-ENVIRONMENT_NAME="tfjs-env"
-PYTHON_VERSION="3.9"  # Choose 3.9 or 3.10 for compatibility
+ENVIRONMENT_NAME="tf-web-v8"
+PYTHON_VERSION="3.8"
 # ---------------------
 
 # --- Check for Conda ---
@@ -22,21 +22,11 @@ echo "Activating Conda environment '$ENVIRONMENT_NAME'..."
 source $(conda info --env | grep "base" | awk '{print $NF}')/../etc/profile.d/conda.sh  #Initialize conda if this is first time running conda in script
 conda activate "$ENVIRONMENT_NAME"
 
-# --- Install TensorFlow Dependencies (Important!) ---
-echo "Installing TensorFlow dependencies..."
-conda install -c apple tensorflow-deps -y
-
-# --- Install TensorFlow-macOS ---
-echo "Installing TensorFlow-macOS..."
-pip install tensorflow-macos
-
-# --- Install TensorFlow-Metal (GPU Support) ---
-echo "Installing TensorFlow-Metal..."
-pip install tensorflow-metal
-
-# --- Install TensorFlow.js Converter ---
-echo "Installing TensorFlow.js converter..."
-pip install tensorflowjs
+# --- Install Required Packages
+pip install tensorflow-macos==2.13.0
+pip install tensorflow-metal==1.0.1
+pip install tensorflowjs==4.20.0
+conda install pillow matplotlib ipykernel
 
 echo "Environment setup complete!"
 echo "Activate the environment using: conda activate $ENVIRONMENT_NAME"
