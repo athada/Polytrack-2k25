@@ -1,0 +1,1 @@
+{"inputShape": [224, 224, 1], "outputShape": [4], "meanImage": 0.0, "stdImage": 255.0, "labels": ["forward", "backward", "left", "right", "forward_right", "forward_left", "backward_right", "backward_left"]}
