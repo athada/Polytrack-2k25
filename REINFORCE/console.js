@@ -10,7 +10,7 @@ await initTF();
 
 // Constants
 const CANVAS_SIZE = 224;
-const N_FRAMES = 4;
+const N_FRAMES = 1;
 const ACTIONS = ["w", "s", "a", "d"];
 const SPEED_THRESHOLD = 200;
 const N_EPISODES = 200;
@@ -405,8 +405,8 @@ async function trainingLoop(numIterations = 10, episodeLength = N_EPISODES, epoc
 
 async function freePlay(canvasId="screen", episodeLength = 100) {
   if (!model) {
-    console.error("[Explore] Model not initialized!");
-    return;
+    console.error("[Free-Play] Model not initialized. Upload a Model to Play.");
+    selectModelFiles();
   }
 
   let stepCount = 0;
@@ -452,5 +452,108 @@ async function freePlay(canvasId="screen", episodeLength = 100) {
 
   } catch (error) {
     console.error("[Explore] Error in freePlay:", error);
+  }
+}
+
+async function uploadModelToIndexedDB(dbName, storeName) {
+  if (!window.showDirectoryPicker) {
+      console.error("Directory picker API is not supported in this browser.");
+      return;
+  }
+
+  try {
+      // Open IndexedDB
+      const request = indexedDB.open(dbName, 1);
+      request.onupgradeneeded = (event) => {
+          let db = event.target.result;
+          if (!db.objectStoreNames.contains(storeName)) {
+              db.createObjectStore(storeName, { keyPath: "name" });
+          }
+      };
+
+      const db = await new Promise((resolve, reject) => {
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+      });
+
+      // Open directory picker
+      const dirHandle = await window.showDirectoryPicker();
+      for await (const [name, fileHandle] of dirHandle) {
+          if (fileHandle.kind === "file") {
+              const file = await fileHandle.getFile();
+              const reader = new FileReader();
+              reader.readAsArrayBuffer(file);
+              
+              await new Promise((resolve) => {
+                  reader.onload = async (event) => {
+                      const transaction = db.transaction(storeName, "readwrite");
+                      const store = transaction.objectStore(storeName);
+                      await store.put({ name, data: event.target.result });
+                      resolve();
+                  };
+              });
+          }
+      }
+
+      console.log("Model files uploaded to IndexedDB successfully.");
+  } catch (error) {
+      console.error("Error uploading model files to IndexedDB:", error);
+  }
+}
+
+async function loadModelManuallyFromIndexedDB(dbName, storeName) {
+  try {
+      const request = indexedDB.open(dbName, 1);
+      const db = await new Promise((resolve, reject) => {
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+      });
+
+      const transaction = db.transaction(storeName, "readonly");
+      const store = transaction.objectStore(storeName);
+      const modelFiles = await new Promise((resolve, reject) => {
+          const files = {};
+          const cursorRequest = store.openCursor();
+
+          cursorRequest.onsuccess = (event) => {
+              const cursor = event.target.result;
+              if (cursor) {
+                  files[cursor.value.name] = cursor.value.data;
+                  cursor.continue();
+              } else {
+                  resolve(files);
+              }
+          };
+          cursorRequest.onerror = () => reject(cursorRequest.error);
+      });
+
+      if (!modelFiles["model.json"]) {
+          throw new Error("model.json file is missing in IndexedDB");
+      }
+
+      // Convert model.json to a File object
+      const modelJsonFile = new Blob([modelFiles["model.json"]], { type: "application/json" });
+      const modelJsonText = await modelJsonFile.text();
+
+      // Sort weight files
+      const weightFiles = Object.keys(modelFiles)
+          .filter(name => name.endsWith(".bin"))
+          .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+
+      // Convert binary data to File objects
+      const binFiles = weightFiles.map(name =>
+          new File([modelFiles[name]], name, { type: "application/octet-stream" })
+      );
+
+      // Load the model using browserFiles
+      const model = await tf.loadLayersModel(tf.io.browserFiles([
+          new File([modelJsonText], "model.json", { type: "application/json" }),
+          ...binFiles
+      ]));
+
+      console.log("Model loaded successfully.");
+      return model;
+  } catch (error) {
+      console.error("Error loading model from IndexedDB:", error);
   }
 }
