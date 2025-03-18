@@ -104,7 +104,7 @@ export async function loadLatestModel() {
   console.log(`Loading latest model: ${latestKey}`);
 
   // Load and return the latest model
-  return await tf.loadLatestModel(latestKey);
+  return await tf.loadLayersModel(latestKey);
 }
 
 export async function downloadModel(modelKey) {
