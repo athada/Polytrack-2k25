@@ -17,15 +17,16 @@ const upload = multer({ storage: multer.memoryStorage() });
 app.use(cors());
 
 const API_KEY_FILE = path.join(__dirname, "api-key.json");
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
 // Function to read API key from file
 async function getStoredApiKey() {
   try {
     const data = await fs.readFile(API_KEY_FILE, "utf8");
     const { apiKey } = JSON.parse(data);
-    return apiKey;
+    return apiKey || GEMINI_API_KEY;
   } catch (error) {
-    return null;
+    return GEMINI_API_KEY;
   }
 }
 
