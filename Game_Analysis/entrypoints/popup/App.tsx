@@ -142,15 +142,6 @@ function App() {
     }
   };
 
-  // Update the "Change" button to also remove from localStorage
-  const handleNameSubmitOld = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (userName.trim()) {
-      setSubmittedName(userName.trim());
-      setUserName(""); // Clear input after submission
-    }
-  };
-
   // Update handleSubmit to remove API key setup logic
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -220,7 +211,6 @@ function App() {
       const responseContent = await chrome.tabs.sendMessage(tab.id, {
         type: "GENERATE_SUMMARY",
         prompt: stylePrompts[summaryStyle as keyof typeof stylePrompts],
-        isAIDriverSet: isAIDriverSet,
       });
 
       if (responseContent.error) {
@@ -237,6 +227,24 @@ function App() {
       );
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleJSONSubmit = async () => {
+    try {
+      const [tab] = await chrome.tabs.query({
+        active: true,
+        currentWindow: true,
+      });
+      if (!tab.id) throw new Error("No active tab found");
+
+      const jsonDataFetchResponse = await chrome.tabs.sendMessage(tab.id, {
+        type: "FETCH_JSON_DATA",
+        isAIDriverSet: isAIDriverSet,
+        track: "GD-Track-01",
+      });
+    } catch (err) {
+      console.error("Error fetching JSON data:", err);
     }
   };
 
@@ -497,6 +505,7 @@ function App() {
           {isLoading ? "Generating..." : "Generate Summary"}
         </button>
       </form>
+      <button onClick={handleJSONSubmit}>Read JSON</button>
     </div>
   );
 }

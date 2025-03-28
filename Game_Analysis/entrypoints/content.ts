@@ -30,6 +30,26 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     sendResponse(status);
     return true;
   }
+
+  if (message.type === "FETCH_JSON_DATA" && message.isAIDriverSet) {
+    if (!message.track) {
+      sendResponse({ error: "No track specified" });
+      return true;
+    }
+    console.log("Fetching JSON data for track:", message.track);
+
+    fetchJsonData(message.track)
+      .then((jsonData) => {
+        sendResponse({ success: true, data: jsonData });
+      })
+      .catch((error) => {
+        const errorMessage = "Failed to fetch JSON data. Please try again.";
+        sendResponse({ error: errorMessage });
+        showErrorDialog(errorMessage);
+      });
+
+    return true;
+  }
 });
 
 async function sendToLLMEndpoint(
@@ -439,6 +459,49 @@ function initializeRecorder() {
     checkDomForRecording();
   });
   observer.observe(document.body, { childList: true, subtree: true });
+}
+
+async function fetchJsonData(track: string): Promise<any> {
+  try {
+    // Define the number of files in each track folder
+    const fileCountMap: Record<string, number> = {
+      "GD-Track-01": 9,
+      "GD-Track-02": 15,
+      "GD-Track-03": 10,
+    };
+
+    const fileCount = fileCountMap[track] || 10;
+
+    // Generate a random file index
+    const randomIndex = Math.floor(Math.random() * fileCount);
+
+    // Path is now simpler since files from public get copied to root
+    const fileUrl = chrome.runtime.getURL(
+      `Datasets/${track}/${randomIndex}.json`
+    );
+
+    console.log("Attempting to fetch:", fileUrl);
+
+    // Fetch the random file
+    const response = await fetch(fileUrl);
+
+    if (!response.ok) {
+      throw new Error(
+        `Failed to fetch file: ${response.status} ${response.statusText}`
+      );
+    }
+
+    const jsonData = await response.json();
+
+    console.log(
+      `Random JSON data from track ${track} (file: ${randomIndex}.json):`,
+      jsonData
+    );
+    return jsonData;
+  } catch (error) {
+    console.error(`Error fetching JSON data for track ${track}:`, error);
+    return null;
+  }
 }
 
 export default defineContentScript({
