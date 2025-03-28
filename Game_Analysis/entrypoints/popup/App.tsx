@@ -43,6 +43,7 @@ function App() {
   const [userName, setUserName] = useState("");
   const [submittedName, setSubmittedName] = useState("");
   const [isAIDriverSet, setIsAIDriverSet] = useState<boolean>(false);
+  const [selectedTrack, setSelectedTrack] = useState<string>("GD-Track-01");
 
   // Add this effect to check gameplay availability when popup opens
   useEffect(() => {
@@ -238,11 +239,12 @@ function App() {
       });
       if (!tab.id) throw new Error("No active tab found");
 
-      const jsonDataFetchResponse = await chrome.tabs.sendMessage(tab.id, {
-        type: "FETCH_JSON_DATA",
+      chrome.tabs.sendMessage(tab.id, {
+        type: "RUN_AI_DRIVER",
         isAIDriverSet: isAIDriverSet,
-        track: "GD-Track-01",
+        track: selectedTrack,
       });
+      window.close();
     } catch (err) {
       console.error("Error fetching JSON data:", err);
     }
@@ -254,9 +256,9 @@ function App() {
       <div className="flex items-center gap-2 mb-6">
         <GamepadIcon className="w-8 h-8 text-indigo-400" />
         <div>
-          <h2 className="text-3xl font-bold text-white">Game Analysis</h2>
+          <h2 className="text-3xl font-bold text-white">Summaracer</h2>
           <p className="text-xs text-gray-400">
-            Get instant game driving summaries
+            AI-driven racing and smart summaries.
           </p>
         </div>
       </div>
@@ -385,6 +387,131 @@ function App() {
         </div>
       )}
 
+      {/* Track Selection - Added new component */}
+      {submittedName && (
+        <div className="mb-4 bg-gray-800 border border-gray-700 rounded-md overflow-hidden">
+          <div className="px-3 py-2 border-b border-gray-700">
+            <label className="text-xs font-medium text-gray-300">
+              Select Track
+            </label>
+          </div>
+          <div className="p-3">
+            <div className="grid grid-cols-3 gap-2">
+              <label
+                className={`flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-md cursor-pointer border transition-all ${
+                  selectedTrack === "GD-Track-01"
+                    ? "bg-indigo-900/40 border-indigo-500"
+                    : "bg-gray-700/30 border-gray-600 hover:bg-gray-700/50"
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="trackSelection"
+                  checked={selectedTrack === "GD-Track-01"}
+                  onChange={() => setSelectedTrack("GD-Track-01")}
+                  className="sr-only"
+                />
+                <div
+                  className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${
+                    selectedTrack === "GD-Track-01"
+                      ? "border-indigo-400"
+                      : "border-gray-500"
+                  }`}
+                >
+                  {selectedTrack === "GD-Track-01" && (
+                    <div className="w-1.5 h-1.5 rounded-full bg-indigo-400"></div>
+                  )}
+                </div>
+                <span
+                  className={`font-medium text-sm ${
+                    selectedTrack === "GD-Track-01"
+                      ? "text-indigo-300"
+                      : "text-gray-300"
+                  }`}
+                >
+                  Track 1
+                </span>
+              </label>
+
+              <label
+                className={`flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-md cursor-pointer border transition-all ${
+                  selectedTrack === "GD-Track-02"
+                    ? "bg-indigo-900/40 border-indigo-500"
+                    : "bg-gray-700/30 border-gray-600 hover:bg-gray-700/50"
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="trackSelection"
+                  checked={selectedTrack === "GD-Track-02"}
+                  onChange={() => setSelectedTrack("GD-Track-02")}
+                  className="sr-only"
+                />
+                <div
+                  className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${
+                    selectedTrack === "GD-Track-02"
+                      ? "border-indigo-400"
+                      : "border-gray-500"
+                  }`}
+                >
+                  {selectedTrack === "GD-Track-02" && (
+                    <div className="w-1.5 h-1.5 rounded-full bg-indigo-400"></div>
+                  )}
+                </div>
+                <span
+                  className={`font-medium text-sm ${
+                    selectedTrack === "GD-Track-02"
+                      ? "text-indigo-300"
+                      : "text-gray-300"
+                  }`}
+                >
+                  Track 2
+                </span>
+              </label>
+
+              <label
+                className={`flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-md cursor-pointer border transition-all ${
+                  selectedTrack === "GD-Track-03"
+                    ? "bg-indigo-900/40 border-indigo-500"
+                    : "bg-gray-700/30 border-gray-600 hover:bg-gray-700/50"
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="trackSelection"
+                  checked={selectedTrack === "GD-Track-03"}
+                  onChange={() => setSelectedTrack("GD-Track-03")}
+                  className="sr-only"
+                />
+                <div
+                  className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${
+                    selectedTrack === "GD-Track-03"
+                      ? "border-indigo-400"
+                      : "border-gray-500"
+                  }`}
+                >
+                  {selectedTrack === "GD-Track-03" && (
+                    <div className="w-1.5 h-1.5 rounded-full bg-indigo-400"></div>
+                  )}
+                </div>
+                <span
+                  className={`font-medium text-sm ${
+                    selectedTrack === "GD-Track-03"
+                      ? "text-indigo-300"
+                      : "text-gray-300"
+                  }`}
+                >
+                  Track 3
+                </span>
+              </label>
+            </div>
+            <p className="text-xs text-gray-500 mt-2">
+              Select which track you're playing on
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Main Form */}
       <form onSubmit={handleSubmit} className="space-y-4">
         {/* Update API Key input section */}
@@ -481,31 +608,44 @@ function App() {
         </div>
 
         {/* Update Submit Button */}
-        <button
-          type="submit"
-          disabled={isLoading || !isGameplayAvailable || !hasStoredApiKey}
-          style={{
-            backgroundColor:
-              isLoading || !isGameplayAvailable || !hasStoredApiKey
-                ? "#4B5563"
-                : "#6366F1",
-            color:
-              isLoading || !isGameplayAvailable || !hasStoredApiKey
-                ? "#9CA3AF"
-                : "white",
-            cursor:
-              isLoading || !isGameplayAvailable || !hasStoredApiKey
-                ? "not-allowed"
-                : "pointer",
-            opacity:
-              isLoading || !isGameplayAvailable || !hasStoredApiKey ? 0.6 : 1,
-          }}
-          className="w-full py-2 px-4 rounded transition-colors hover:bg-indigo-600"
-        >
-          {isLoading ? "Generating..." : "Generate Summary"}
-        </button>
+        <div className="flex gap-2">
+          <button
+            type="submit"
+            disabled={isLoading || !isGameplayAvailable || !hasStoredApiKey}
+            style={{
+              backgroundColor:
+                isLoading || !isGameplayAvailable || !hasStoredApiKey
+                  ? "#4B5563"
+                  : "#6366F1",
+              color:
+                isLoading || !isGameplayAvailable || !hasStoredApiKey
+                  ? "#9CA3AF"
+                  : "white",
+              cursor:
+                isLoading || !isGameplayAvailable || !hasStoredApiKey
+                  ? "not-allowed"
+                  : "pointer",
+              opacity:
+                isLoading || !isGameplayAvailable || !hasStoredApiKey ? 0.6 : 1,
+            }}
+            className="w-full py-2 px-4 rounded transition-colors hover:bg-indigo-600"
+          >
+            {isLoading ? "Generating..." : "Generate Summary"}
+          </button>
+          <button
+            type="button"
+            onClick={handleJSONSubmit}
+            style={{
+              backgroundColor: "#6366F1",
+              color: "white",
+              cursor: "pointer",
+            }}
+            className="w-full py-2 px-4 rounded transition-colors hover:bg-indigo-600"
+          >
+            Run AI Driver
+          </button>
+        </div>
       </form>
-      <button onClick={handleJSONSubmit}>Read JSON</button>
     </div>
   );
 }

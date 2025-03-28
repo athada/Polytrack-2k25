@@ -8,7 +8,7 @@ export default defineConfig({
     permissions: ["storage"],
     web_accessible_resources: [
       {
-        resources: ["Datasets/**/*.json"],
+        resources: ["Datasets/**/*.json", "./entrypoints/replay.js"],
         matches: ["<all_urls>"],
       },
     ],

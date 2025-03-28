@@ -1,4 +1,5 @@
 let lastRecordedBlob: Blob | null = null;
+import init from "./replay";
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "GENERATE_SUMMARY") {
@@ -31,21 +32,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
-  if (message.type === "FETCH_JSON_DATA" && message.isAIDriverSet) {
+  if (message.type === "RUN_AI_DRIVER" && message.isAIDriverSet) {
     if (!message.track) {
       sendResponse({ error: "No track specified" });
       return true;
     }
     console.log("Fetching JSON data for track:", message.track);
-
     fetchJsonData(message.track)
       .then((jsonData) => {
-        sendResponse({ success: true, data: jsonData });
+        init(jsonData);
       })
       .catch((error) => {
-        const errorMessage = "Failed to fetch JSON data. Please try again.";
-        sendResponse({ error: errorMessage });
-        showErrorDialog(errorMessage);
+        console.error("Error fetching JSON data:", error);
       });
 
     return true;
@@ -493,10 +491,10 @@ async function fetchJsonData(track: string): Promise<any> {
 
     const jsonData = await response.json();
 
-    console.log(
-      `Random JSON data from track ${track} (file: ${randomIndex}.json):`,
-      jsonData
-    );
+    // console.log(
+    //   `Random JSON data from track ${track} (file: ${randomIndex}.json):`,
+    //   jsonData
+    // );
     return jsonData;
   } catch (error) {
     console.error(`Error fetching JSON data for track ${track}:`, error);
