@@ -1,5 +1,37 @@
 let lastRecordedBlob: Blob | null = null;
 
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === "GENERATE_SUMMARY") {
+    const gameplayStatus = checkGameplayAvailability();
+
+    if (!gameplayStatus.available) {
+      showErrorDialog(gameplayStatus.message);
+      sendResponse({ error: gameplayStatus.message });
+      return;
+    }
+
+    sendToLLMEndpoint(message.prompt, lastRecordedBlob!)
+      .then((summary) => {
+        showSummaryDialog(summary);
+        sendResponse({ success: true });
+      })
+      .catch((error) => {
+        const errorMessage = "Failed to generate summary. Please try again.";
+        console.error("Error generating summary:", error);
+        showErrorDialog(errorMessage);
+        sendResponse({ error: errorMessage });
+      });
+
+    return true;
+  }
+
+  if (message.type === "CHECK_GAMEPLAY") {
+    const status = checkGameplayAvailability();
+    sendResponse(status);
+    return true;
+  }
+});
+
 async function sendToLLMEndpoint(
   prompt: string,
   videoBlob: Blob
@@ -220,38 +252,6 @@ function checkGameplayAvailability(): { available: boolean; message: string } {
     message: "Gameplay recording is available",
   };
 }
-
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.type === "GENERATE_SUMMARY") {
-    const gameplayStatus = checkGameplayAvailability();
-
-    if (!gameplayStatus.available) {
-      showErrorDialog(gameplayStatus.message);
-      sendResponse({ error: gameplayStatus.message });
-      return;
-    }
-
-    sendToLLMEndpoint(message.prompt, lastRecordedBlob!)
-      .then((summary) => {
-        showSummaryDialog(summary);
-        sendResponse({ success: true });
-      })
-      .catch((error) => {
-        const errorMessage = "Failed to generate summary. Please try again.";
-        console.error("Error generating summary:", error);
-        showErrorDialog(errorMessage);
-        sendResponse({ error: errorMessage });
-      });
-
-    return true;
-  }
-
-  if (message.type === "CHECK_GAMEPLAY") {
-    const status = checkGameplayAvailability();
-    sendResponse(status);
-    return true;
-  }
-});
 
 function showErrorDialog(message: string) {
   const dialog = document.createElement("dialog");

@@ -40,6 +40,9 @@ function App() {
     useState<boolean>(false);
   const [statusMessage, setStatusMessage] = useState<string>("");
   const [hasStoredApiKey, setHasStoredApiKey] = useState(false);
+  const [userName, setUserName] = useState("");
+  const [submittedName, setSubmittedName] = useState("");
+  const [isAIDriverSet, setIsAIDriverSet] = useState<boolean>(false);
 
   // Add this effect to check gameplay availability when popup opens
   useEffect(() => {
@@ -83,18 +86,18 @@ function App() {
     checkApiKey();
   }, []);
 
-  // Handle form submission
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    // Only check for API key if we don't have one stored
-    if (!hasStoredApiKey && !apiKey.trim()) {
-      setError("API key is required");
-      return;
+  // Add this effect to load name from localStorage when popup opens
+  useEffect(() => {
+    const storedName = localStorage.getItem("game-analysis-username");
+    if (storedName) {
+      setSubmittedName(storedName);
     }
+  }, []);
 
-    if (!isGameplayAvailable) {
-      setError("No gameplay recording available. Please play a game first!");
+  // Add new handler for API key setup
+  const handleApiKeySetup = async () => {
+    if (!apiKey.trim()) {
+      setError("API key is required");
       return;
     }
 
@@ -102,24 +105,70 @@ function App() {
     setError("");
 
     try {
-      // Only send API key to backend if we don't have one stored
-      if (!hasStoredApiKey) {
-        const response = await fetch("http://localhost:3001/set-api-key", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ apiKey }),
-        });
+      const response = await fetch("http://localhost:3001/set-api-key", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ apiKey }),
+      });
 
-        if (!response.ok) {
-          throw new Error("Failed to set API key");
-        }
-
-        setHasStoredApiKey(true);
-        setApiKey(""); // Clear the input
+      if (!response.ok) {
+        throw new Error("Failed to set API key");
       }
 
+      setHasStoredApiKey(true);
+      setApiKey(""); // Clear the input
+      setError(""); // Clear any existing errors
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to set API key. Please try again."
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Update handler to save name to localStorage
+  const handleNameSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (userName.trim()) {
+      const name = userName.trim();
+      setSubmittedName(name);
+      localStorage.setItem("game-analysis-username", name);
+      setUserName(""); // Clear input after submission
+    }
+  };
+
+  // Update the "Change" button to also remove from localStorage
+  const handleNameSubmitOld = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (userName.trim()) {
+      setSubmittedName(userName.trim());
+      setUserName(""); // Clear input after submission
+    }
+  };
+
+  // Update handleSubmit to remove API key setup logic
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!isGameplayAvailable) {
+      setError("No gameplay recording available. Please play a game first!");
+      return;
+    }
+
+    if (!hasStoredApiKey) {
+      setError("Please set up your API key first");
+      return;
+    }
+
+    setIsLoading(true);
+    setError("");
+
+    try {
       // Get the current active tab
       const [tab] = await chrome.tabs.query({
         active: true,
@@ -171,6 +220,7 @@ function App() {
       const responseContent = await chrome.tabs.sendMessage(tab.id, {
         type: "GENERATE_SUMMARY",
         prompt: stylePrompts[summaryStyle as keyof typeof stylePrompts],
+        isAIDriverSet: isAIDriverSet,
       });
 
       if (responseContent.error) {
@@ -185,7 +235,6 @@ function App() {
           ? err.message
           : "Failed to generate summary. Please try again."
       );
-      console.error("Error:", err);
     } finally {
       setIsLoading(false);
     }
@@ -204,22 +253,156 @@ function App() {
         </div>
       </div>
 
+      {/* Name Input Section */}
+      {!submittedName ? (
+        <form onSubmit={handleNameSubmit} className="mb-6">
+          <label className="block text-sm font-medium text-gray-300 mb-1">
+            Your Name
+            <div className="flex gap-2 mt-1">
+              <input
+                type="text"
+                value={userName}
+                onChange={(e) => setUserName(e.target.value)}
+                className="flex-1 px-4 py-2 bg-gray-800 border border-gray-700 rounded-md focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400 text-white"
+                placeholder="Enter your name"
+              />
+              <button
+                type="submit"
+                disabled={!userName.trim()}
+                className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:bg-gray-600 disabled:cursor-not-allowed"
+              >
+                Set Name
+              </button>
+            </div>
+          </label>
+        </form>
+      ) : (
+        <div className="flex items-center justify-between mb-6 p-3 bg-gray-800 rounded-md border border-gray-700">
+          <div className="flex items-center gap-2 text-lg">
+            <span className="text-gray-400">Welcome,</span>
+            <span className="text-indigo-400 font-semibold">
+              {submittedName}
+            </span>
+          </div>
+          <button
+            onClick={() => {
+              setSubmittedName("");
+              localStorage.removeItem("game-analysis-username");
+            }}
+            className="text-xs text-gray-400 hover:text-white"
+          >
+            Change
+          </button>
+        </div>
+      )}
+
+      {/* AI Driver Enabled? - Smaller Beautified Version */}
+      {submittedName && (
+        <div className="mb-4 bg-gray-800 border border-gray-700 rounded-md overflow-hidden">
+          <div className="px-3 py-2 border-b border-gray-700">
+            <label className="text-xs font-medium text-gray-300">
+              AI Driver Enabled?
+            </label>
+          </div>
+          <div className="p-3">
+            <div className="grid grid-cols-2 gap-2">
+              <label
+                className={`flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-md cursor-pointer border transition-all ${
+                  isAIDriverSet
+                    ? "bg-indigo-900/40 border-indigo-500"
+                    : "bg-gray-700/30 border-gray-600 hover:bg-gray-700/50"
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="aiDriver"
+                  checked={isAIDriverSet}
+                  onChange={() => setIsAIDriverSet(true)}
+                  className="sr-only" // Hide default radio but keep functionality
+                />
+                <div
+                  className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${
+                    isAIDriverSet ? "border-indigo-400" : "border-gray-500"
+                  }`}
+                >
+                  {isAIDriverSet && (
+                    <div className="w-1.5 h-1.5 rounded-full bg-indigo-400"></div>
+                  )}
+                </div>
+                <span
+                  className={`font-medium text-sm ${
+                    isAIDriverSet ? "text-indigo-300" : "text-gray-300"
+                  }`}
+                >
+                  Yes
+                </span>
+              </label>
+
+              <label
+                className={`flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-md cursor-pointer border transition-all ${
+                  !isAIDriverSet
+                    ? "bg-indigo-900/40 border-indigo-500"
+                    : "bg-gray-700/30 border-gray-600 hover:bg-gray-700/50"
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="aiDriver"
+                  checked={!isAIDriverSet}
+                  onChange={() => setIsAIDriverSet(false)}
+                  className="sr-only" // Hide default radio but keep functionality
+                />
+                <div
+                  className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${
+                    !isAIDriverSet ? "border-indigo-400" : "border-gray-500"
+                  }`}
+                >
+                  {!isAIDriverSet && (
+                    <div className="w-1.5 h-1.5 rounded-full bg-indigo-400"></div>
+                  )}
+                </div>
+                <span
+                  className={`font-medium text-sm ${
+                    !isAIDriverSet ? "text-indigo-300" : "text-gray-300"
+                  }`}
+                >
+                  No
+                </span>
+              </label>
+            </div>
+            <p className="text-xs text-gray-500 mt-2">
+              Select "Yes" if AI is controlling the vehicle
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Main Form */}
       <form onSubmit={handleSubmit} className="space-y-4">
-        {/* Only show API Key input if no key is stored */}
+        {/* Update API Key input section */}
         {!hasStoredApiKey && (
           <div>
             <label className="block text-sm font-medium text-gray-300 mb-1">
               API Key
-              <div className="relative mt-1">
-                <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-                <input
-                  type="password"
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 bg-gray-800 border border-gray-700 rounded-md focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400 text-white"
-                  placeholder="Enter your API key"
-                />
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                  <input
+                    type="password"
+                    value={apiKey}
+                    onChange={(e) => setApiKey(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2 bg-gray-800 border border-gray-700 rounded-md focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400 text-white"
+                    placeholder="Enter your API key"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={handleApiKeySetup}
+                  disabled={isLoading || !apiKey}
+                  className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:bg-gray-600 disabled:cursor-not-allowed"
+                >
+                  Set Key
+                </button>
               </div>
             </label>
           </div>
@@ -289,29 +472,25 @@ function App() {
           {statusMessage}
         </div>
 
-        {/* Submit Button */}
+        {/* Update Submit Button */}
         <button
           type="submit"
-          disabled={
-            isLoading || !isGameplayAvailable || (!hasStoredApiKey && !apiKey)
-          }
+          disabled={isLoading || !isGameplayAvailable || !hasStoredApiKey}
           style={{
             backgroundColor:
-              isLoading || !isGameplayAvailable || (!hasStoredApiKey && !apiKey)
+              isLoading || !isGameplayAvailable || !hasStoredApiKey
                 ? "#4B5563"
                 : "#6366F1",
             color:
-              isLoading || !isGameplayAvailable || (!hasStoredApiKey && !apiKey)
+              isLoading || !isGameplayAvailable || !hasStoredApiKey
                 ? "#9CA3AF"
                 : "white",
             cursor:
-              isLoading || !isGameplayAvailable || (!hasStoredApiKey && !apiKey)
+              isLoading || !isGameplayAvailable || !hasStoredApiKey
                 ? "not-allowed"
                 : "pointer",
             opacity:
-              isLoading || !isGameplayAvailable || (!hasStoredApiKey && !apiKey)
-                ? 0.6
-                : 1,
+              isLoading || !isGameplayAvailable || !hasStoredApiKey ? 0.6 : 1,
           }}
           className="w-full py-2 px-4 rounded transition-colors hover:bg-indigo-600"
         >
