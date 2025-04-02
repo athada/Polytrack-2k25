@@ -1,7 +1,7 @@
 let lastRecordedBlob: Blob | null = null;
-import init from "./replay";
+import init, { simulateKeyState } from "./replay";
 
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+chrome.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
   if (message.type === "GENERATE_SUMMARY") {
     const gameplayStatus = checkGameplayAvailability();
 
@@ -32,23 +32,82 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
-  if (message.type === "RUN_AI_DRIVER" && message.isAIDriverSet) {
+  if (message.type === "RUN_AI_DRIVER") {
     if (!message.track) {
       sendResponse({ error: "No track specified" });
       return true;
     }
-    console.log("Fetching JSON data for track:", message.track);
-    fetchJsonData(message.track)
-      .then((jsonData) => {
-        init(jsonData);
-      })
-      .catch((error) => {
-        console.error("Error fetching JSON data:", error);
-      });
+    await redirectToTrack(message.track);
+    if (message.isAIDriverSet) {
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      fetchJsonData(message.track)
+        .then((jsonData) => {
+          init(jsonData);
+        })
+        .catch((error) => {
+          console.error("Error fetching JSON data:", error);
+        });
+    }
 
     return true;
   }
 });
+async function redirectToTrack(track: string) {
+  // simulateKeyState(["Escape"]);
+  document.querySelectorAll("button.button").forEach((btn) => {
+    if (
+      btn.textContent?.trim() === "Exit" &&
+      btn instanceof HTMLButtonElement
+    ) {
+      console.log("Click on Exit button.");
+      btn.click();
+    }
+  });
+
+  await new Promise((resolve) => setTimeout(resolve, 500));
+  //Click play button Main Menu
+  const buttons = document.querySelectorAll("button.button-image");
+  const lastButton = Array.from(buttons)
+    .reverse()
+    .find(
+      (button) => button.querySelector("p")?.textContent?.trim() === "Play"
+    );
+
+  if (lastButton && lastButton instanceof HTMLButtonElement) {
+    lastButton.click();
+  } else {
+    console.warn("No Menu Play button found.");
+  }
+
+  //Click track button
+  const trackButtons = document.querySelectorAll("button.button");
+
+  for (const button of trackButtons) {
+    const trackTitleDiv = button.querySelector("div.track-title");
+    const paragraph = trackTitleDiv?.querySelector("p");
+
+    if (
+      paragraph &&
+      paragraph.textContent?.trim() === track &&
+      button instanceof HTMLButtonElement
+    ) {
+      button.click();
+    } else {
+      console.warn("No Track button found.");
+    }
+  }
+
+  //Click play button
+  const button = Array.from(
+    document.querySelectorAll("button.button.play")
+  ).find((btn) => btn?.textContent?.trim() === "Play");
+
+  if (button && button instanceof HTMLButtonElement) {
+    button.click();
+  } else {
+    console.warn("No Play button found.");
+  }
+}
 
 async function sendToLLMEndpoint(
   prompt: string,
@@ -361,7 +420,7 @@ function createCanvasRecorder(
     recordedChunks = [];
     lastRecordedBlob = blob;
     const url = URL.createObjectURL(blob);
-    downloadRecording(url);
+    // downloadRecording(url);
     URL.revokeObjectURL(url);
 
     console.log("Recording saved as gameplay.webm");

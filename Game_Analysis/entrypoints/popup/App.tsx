@@ -26,7 +26,10 @@ const SUMMARY_STYLES = [
 function App() {
   // State management
   const [apiKey, setApiKey] = useState("");
-  const [summaryStyle, setSummaryStyle] = useState("normal");
+  const [summaryStyle, setSummaryStyle] = useState(() => {
+    const savedStyle = localStorage.getItem("game-analysis-summary-style");
+    return savedStyle || "short";
+  });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [showTooltip, setShowTooltip] = useState("");
@@ -37,7 +40,10 @@ function App() {
   const [userName, setUserName] = useState("");
   const [submittedName, setSubmittedName] = useState("");
   const [isAIDriverSet, setIsAIDriverSet] = useState<boolean>(false);
-  const [selectedTrack, setSelectedTrack] = useState<string>("GD-Track-01");
+  const [selectedTrack, setSelectedTrack] = useState<string>(() => {
+    const savedTrack = localStorage.getItem("game-analysis-track");
+    return savedTrack || "GD-Track-01";
+  });
 
   // Add this effect to check gameplay availability when popup opens
   useEffect(() => {
@@ -88,6 +94,15 @@ function App() {
       setSubmittedName(storedName);
     }
   }, []);
+
+  // Add effects to save state changes to localStorage
+  useEffect(() => {
+    localStorage.setItem("game-analysis-summary-style", summaryStyle);
+  }, [summaryStyle]);
+
+  useEffect(() => {
+    localStorage.setItem("game-analysis-track", selectedTrack);
+  }, [selectedTrack]);
 
   // Add new handler for API key setup
   const handleApiKeySetup = async () => {

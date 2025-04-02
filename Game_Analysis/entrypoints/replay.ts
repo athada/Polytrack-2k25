@@ -23,14 +23,14 @@ let keyDownHandler = null;
 //Load actions data when script is first loaded
 async function preloadActions() {
   try {
-    console.log("Preloading actions data...");
+    // console.log("Preloading actions data...");
     window.actions = await loadActionsFromIndexedDB();
   } catch (error) {
     console.error("Failed to preload actions:", error);
   }
 }
 
-function simulateKeyState(keysToBePressed) {
+export function simulateKeyState(keysToBePressed) {
   if (!Array.isArray(keysToBePressed)) {
     console.error("Invalid input: keysToBePressed must be an array");
     return;
