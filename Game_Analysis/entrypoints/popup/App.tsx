@@ -4,28 +4,22 @@ import { AlertCircle, GamepadIcon, KeyRound, Loader2 } from "lucide-react";
 // Summary style options
 const SUMMARY_STYLES = [
   {
-    id: "normal",
-    label: "Normal",
-    description: "Professional and objective analysis",
-    icon: "📊",
-  },
-  {
-    id: "roast",
-    label: "Roast",
-    description: "Humorous and critical commentary",
-    icon: "🔥",
-  },
-  {
-    id: "enthusiastic",
-    label: "Enthusiastic",
-    description: "High-energy and positive feedback",
+    id: "short",
+    label: "Short",
+    description: "Brief and concise analysis of driving performance",
     icon: "⚡",
   },
   {
-    id: "technical",
-    label: "Technical",
-    description: "Detailed statistics and analysis",
-    icon: "📈",
+    id: "extended",
+    label: "Extended",
+    description: "Detailed and comprehensive feedback",
+    icon: "📊",
+  },
+  {
+    id: "humor",
+    label: "Humor",
+    description: "Fun and entertaining commentary",
+    icon: "😄",
   },
 ];
 
@@ -170,42 +164,25 @@ function App() {
 
       // Define style-specific prompts
       const stylePrompts = {
-        normal: `Analyze this gameplay video and provide a structured driving performance summary including:
-        - Overall Driving Style
-        - Steering Patterns and Control
-        - Road Positioning and Lane Management
-        - Speed Control and Acceleration Patterns
-        - Common Mistakes and Risks
-        - Specific Areas for Improvement
-        - Final Rating (out of 10) with Brief Justification
-        Keep the tone professional and objective.`,
+        short: `Provide an extremely brief analysis in 2-3 bullet points:
+        - Overall driving assessment
+        - Key improvement tip
+        - Rating (1-10)
+        Be very concise.`,
 
-        roast: `Watch this gameplay and create a humorous, critical roast of the driving performance. Include:
-        - Sarcastic observations about driving style
-        - Playful mockery of any obvious mistakes
-        - Witty comments about steering and control
-        - Creative analogies for their speed management
-        - Entertaining criticism of their decision-making
-        - A final rating (out of 10) with a comedic explanation
-        Make it entertaining but not overly harsh.`,
+        extended: `Keep this concise but include:
+        - Quick driving style assessment
+        - Top 2 strengths
+        - Top 2 areas for improvement
+        - One technical tip
+        - Rating (1-10)
+        Keep it short and focused.`,
 
-        enthusiastic: `Provide an energetic and encouraging analysis of this gameplay! Include:
-        - Exciting observations about driving style! 🚗
-        - Highlight the best moments and techniques! ⭐
-        - Positive notes about control and handling!
-        - Enthusiastic tips for improvement!
-        - Motivating final comments!
-        - An upbeat rating (out of 10) with encouragement!
-        Keep it high-energy and supportive!`,
-
-        technical: `Perform a detailed technical analysis of the gameplay, including:
-        - Quantitative assessment of steering inputs (W,A,S,D frequency)
-        - Statistical analysis of speed variations
-        - Technical evaluation of turn radius and positioning
-        - Precise measurement of reaction times
-        - Data-driven improvement recommendations
-        - Mathematical rating (out of 10) based on measured metrics
-        Focus on concrete data and specific technical details.`,
+        humor: `Create a brief, funny analysis:
+        - One witty observation
+        - One humorous tip
+        - A comedic rating (1-10)
+        Keep it short and entertaining.`,
       };
 
       // Send message to content script with style-specific prompt
@@ -642,7 +619,7 @@ function App() {
             }}
             className="w-full py-2 px-4 rounded transition-colors hover:bg-indigo-600"
           >
-            Run AI Driver
+            Run
           </button>
         </div>
       </form>

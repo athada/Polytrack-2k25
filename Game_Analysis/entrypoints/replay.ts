@@ -593,11 +593,8 @@ const init = async (jsonData) => {
   // Set up key handler for restart detection
   isRunning = true;
   keyDownHandler = (event) => {
-    if (
-      (event.key === "r" || event.key === "R" || event.key === "Enter") &&
-      isRunning
-    ) {
-      console.log("Restart key detected - stopping AI driver simulation");
+    if (event.key === "Escape" && isRunning) {
+      console.log("Escape key detected - stopping AI driver simulation");
       stopSimulation();
     }
   };
