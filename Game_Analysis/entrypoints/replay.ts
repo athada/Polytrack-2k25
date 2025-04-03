@@ -604,7 +604,7 @@ const init = async (jsonData) => {
 };
 
 // Add this new function to handle cleanup
-const stopSimulation = () => {
+export const stopSimulation = () => {
   // Stop all intervals
   clearInterval(checkForGameStartInterval);
   clearInterval(checkForCarMovementInterval);

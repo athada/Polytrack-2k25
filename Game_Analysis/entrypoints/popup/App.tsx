@@ -87,12 +87,13 @@ function App() {
     checkApiKey();
   }, []);
 
-  // Add this effect to load name from localStorage when popup opens
+  // Add this effect to load name from extension storage when popup opens
   useEffect(() => {
-    const storedName = localStorage.getItem("game-analysis-username");
-    if (storedName) {
-      setSubmittedName(storedName);
-    }
+    chrome.storage.local.get(["playerName"], (result) => {
+      if (result.playerName) {
+        setSubmittedName(result.playerName);
+      }
+    });
   }, []);
 
   // Add effects to save state changes to localStorage
@@ -141,13 +142,13 @@ function App() {
     }
   };
 
-  // Update handler to save name to localStorage
+  // Update handler to save name to extension storage
   const handleNameSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (userName.trim()) {
       const name = userName.trim();
       setSubmittedName(name);
-      localStorage.setItem("game-analysis-username", name);
+      chrome.storage.local.set({ playerName: name });
       setUserName(""); // Clear input after submission
     }
   };
@@ -201,6 +202,7 @@ function App() {
       };
 
       // Send message to content script with style-specific prompt
+      window.close();
       const responseContent = await chrome.tabs.sendMessage(tab.id, {
         type: "GENERATE_SUMMARY",
         prompt: stylePrompts[summaryStyle as keyof typeof stylePrompts],
@@ -243,13 +245,30 @@ function App() {
   };
 
   return (
-    <div className="w-[400px] p-6 bg-gray-900">
+    <div className="w-[400px] p-6 bg-black">
       {/* Header */}
-      <div className="flex items-center gap-2 mb-6">
-        <GamepadIcon className="w-8 h-8 text-indigo-400" />
+      <div className="flex items-center gap-2 mb-6 relative overflow-hidden p-4 bg-gradient-to-r from-red-600 to-red-800 rounded-md">
+        {/* Checkered flag accent */}
+        <div
+          className="absolute top-0 right-0 w-12 h-8 opacity-30"
+          style={{
+            backgroundImage: `
+              linear-gradient(45deg, #000 25%, transparent 25%),
+              linear-gradient(-45deg, #000 25%, transparent 25%),
+              linear-gradient(45deg, transparent 75%, #000 75%),
+              linear-gradient(-45deg, transparent 75%, #000 75%)
+            `,
+            backgroundSize: "8px 8px",
+            backgroundPosition: "0 0, 0 4px, 4px -4px, -4px 0px",
+            transform: "rotate(-10deg)",
+          }}
+        />
+        <GamepadIcon className="w-8 h-8 text-white" />
         <div>
-          <h2 className="text-3xl font-bold text-white">Summaracer</h2>
-          <p className="text-xs text-gray-400">
+          <h2 className="text-3xl font-bold text-white uppercase tracking-wide">
+            Summaracer
+          </h2>
+          <p className="text-xs text-gray-200">
             AI-driven racing and smart summaries.
           </p>
         </div>
@@ -258,20 +277,56 @@ function App() {
       {/* Name Input Section */}
       {!submittedName ? (
         <form onSubmit={handleNameSubmit} className="mb-6">
-          <label className="block text-sm font-medium text-gray-300 mb-1">
+          <label className="block text-sm font-medium text-gray-300 mb-1 uppercase tracking-wide">
             Your Name
             <div className="flex gap-2 mt-1">
               <input
                 type="text"
                 value={userName}
                 onChange={(e) => setUserName(e.target.value)}
-                className="flex-1 px-4 py-2 bg-gray-800 border border-gray-700 rounded-md focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400 text-white"
+                className="flex-1 px-4 py-2 bg-gray-900 border border-gray-800 rounded-md focus:border-red-600 focus:outline-none focus:shadow-[0_0_0_1px_rgba(220,38,38,0.5),0_0_8px_rgba(220,38,38,0.4)] text-white transition-all duration-200"
                 placeholder="Enter your name"
               />
               <button
                 type="submit"
                 disabled={!userName.trim()}
-                className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:bg-gray-600 disabled:cursor-not-allowed"
+                style={{
+                  paddingLeft: "1rem",
+                  paddingRight: "1rem",
+                  paddingTop: "0.5rem",
+                  paddingBottom: "0.5rem",
+                  background: !userName.trim()
+                    ? "linear-gradient(to right, #374151, #1f2937)"
+                    : "linear-gradient(to right, #dc2626, #991b1b)",
+                  color: !userName.trim() ? "#9ca3af" : "#ffffff",
+                  borderRadius: "0.375rem",
+                  border: "1px solid transparent",
+                  transition: "all 200ms",
+                  textTransform: "uppercase",
+                  fontWeight: 500,
+                  letterSpacing: "0.025em",
+                  cursor: !userName.trim() ? "not-allowed" : "pointer",
+                  opacity: !userName.trim() ? 0.6 : 1,
+                }}
+                onMouseEnter={(e) => {
+                  if (userName.trim()) {
+                    e.currentTarget.style.borderColor = "#ef4444";
+                    e.currentTarget.style.background =
+                      "linear-gradient(to right, #b91c1c, #7f1d1d)";
+                    e.currentTarget.style.boxShadow =
+                      "0 0 12px rgba(220,38,38,0.6)";
+                    e.currentTarget.style.transform = "translateY(-0.125rem)";
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (userName.trim()) {
+                    e.currentTarget.style.borderColor = "transparent";
+                    e.currentTarget.style.background =
+                      "linear-gradient(to right, #dc2626, #991b1b)";
+                    e.currentTarget.style.boxShadow = "none";
+                    e.currentTarget.style.transform = "none";
+                  }
+                }}
               >
                 Set Name
               </button>
@@ -279,30 +334,53 @@ function App() {
           </label>
         </form>
       ) : (
-        <div className="flex items-center justify-between mb-6 p-3 bg-gray-800 rounded-md border border-gray-700">
+        <div className="flex items-center justify-between mb-6 p-3 bg-gray-900 rounded-md border border-gray-800">
           <div className="flex items-center gap-2 text-lg">
             <span className="text-gray-400">Welcome,</span>
-            <span className="text-indigo-400 font-semibold">
-              {submittedName}
-            </span>
+            <span className="text-red-500 font-semibold">{submittedName}</span>
           </div>
           <button
             onClick={() => {
               setSubmittedName("");
-              localStorage.removeItem("game-analysis-username");
+              chrome.storage.local.remove("playerName");
             }}
-            className="text-xs text-gray-400 hover:text-white"
+            style={{
+              fontSize: "0.75rem",
+              color: "#9ca3af",
+              border: "1px solid #ef4444",
+              backgroundColor: "#111827",
+              paddingLeft: "0.5rem",
+              paddingRight: "0.5rem",
+              paddingTop: "0.25rem",
+              paddingBottom: "0.25rem",
+              borderRadius: "0.25rem",
+              transition: "all 200ms",
+              textTransform: "uppercase",
+              fontWeight: 500,
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.color = "#ef4444";
+              e.currentTarget.style.borderColor = "#ef4444";
+              e.currentTarget.style.backgroundColor = "#1f2937";
+              e.currentTarget.style.boxShadow = "0 0 8px rgba(220,38,38,0.3)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.color = "#9ca3af";
+              e.currentTarget.style.borderColor = "#ef4444";
+              e.currentTarget.style.backgroundColor = "#111827";
+              e.currentTarget.style.boxShadow = "none";
+            }}
           >
             Change
           </button>
         </div>
       )}
 
-      {/* AI Driver Enabled? - Smaller Beautified Version */}
+      {/* AI Driver Enabled? - Racing Style Cards */}
       {submittedName && (
-        <div className="mb-4 bg-gray-800 border border-gray-700 rounded-md overflow-hidden">
-          <div className="px-3 py-2 border-b border-gray-700">
-            <label className="text-xs font-medium text-gray-300">
+        <div className="mb-4 bg-gray-900 border border-gray-800 rounded-md overflow-hidden">
+          <div className="px-3 py-2 border-b border-gray-800 bg-gradient-to-r from-red-800/30 to-red-900/20">
+            <label className="text-xs font-medium text-gray-300 uppercase tracking-wide">
               AI Driver Enabled?
             </label>
           </div>
@@ -311,8 +389,8 @@ function App() {
               <label
                 className={`flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-md cursor-pointer border transition-all ${
                   isAIDriverSet
-                    ? "bg-indigo-900/40 border-indigo-500"
-                    : "bg-gray-700/30 border-gray-600 hover:bg-gray-700/50"
+                    ? "bg-red-900/40 border-red-500"
+                    : "bg-gray-900/30 border-gray-800 hover:bg-gray-800/50"
                 }`}
               >
                 <input
@@ -324,16 +402,16 @@ function App() {
                 />
                 <div
                   className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${
-                    isAIDriverSet ? "border-indigo-400" : "border-gray-500"
+                    isAIDriverSet ? "border-red-400" : "border-gray-600"
                   }`}
                 >
                   {isAIDriverSet && (
-                    <div className="w-1.5 h-1.5 rounded-full bg-indigo-400"></div>
+                    <div className="w-1.5 h-1.5 rounded-full bg-red-500"></div>
                   )}
                 </div>
                 <span
-                  className={`font-medium text-sm ${
-                    isAIDriverSet ? "text-indigo-300" : "text-gray-300"
+                  className={`font-medium text-sm uppercase ${
+                    isAIDriverSet ? "text-red-300" : "text-gray-300"
                   }`}
                 >
                   Yes
@@ -343,8 +421,8 @@ function App() {
               <label
                 className={`flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-md cursor-pointer border transition-all ${
                   !isAIDriverSet
-                    ? "bg-indigo-900/40 border-indigo-500"
-                    : "bg-gray-700/30 border-gray-600 hover:bg-gray-700/50"
+                    ? "bg-red-900/40 border-red-500"
+                    : "bg-gray-900/30 border-gray-800 hover:bg-gray-800/50"
                 }`}
               >
                 <input
@@ -356,16 +434,16 @@ function App() {
                 />
                 <div
                   className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${
-                    !isAIDriverSet ? "border-indigo-400" : "border-gray-500"
+                    !isAIDriverSet ? "border-red-400" : "border-gray-600"
                   }`}
                 >
                   {!isAIDriverSet && (
-                    <div className="w-1.5 h-1.5 rounded-full bg-indigo-400"></div>
+                    <div className="w-1.5 h-1.5 rounded-full bg-red-500"></div>
                   )}
                 </div>
                 <span
-                  className={`font-medium text-sm ${
-                    !isAIDriverSet ? "text-indigo-300" : "text-gray-300"
+                  className={`font-medium text-sm uppercase ${
+                    !isAIDriverSet ? "text-red-300" : "text-gray-300"
                   }`}
                 >
                   No
@@ -379,11 +457,11 @@ function App() {
         </div>
       )}
 
-      {/* Track Selection - Added new component */}
+      {/* Track Selection - Racing Style Cards */}
       {submittedName && (
-        <div className="mb-4 bg-gray-800 border border-gray-700 rounded-md overflow-hidden">
-          <div className="px-3 py-2 border-b border-gray-700">
-            <label className="text-xs font-medium text-gray-300">
+        <div className="mb-4 bg-gray-900 border border-gray-800 rounded-md overflow-hidden">
+          <div className="px-3 py-2 border-b border-gray-800 bg-gradient-to-r from-red-800/30 to-red-900/20">
+            <label className="text-xs font-medium text-gray-300 uppercase tracking-wide">
               Select Track
             </label>
           </div>
@@ -392,8 +470,8 @@ function App() {
               <label
                 className={`flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-md cursor-pointer border transition-all ${
                   selectedTrack === "GD-Track-01"
-                    ? "bg-indigo-900/40 border-indigo-500"
-                    : "bg-gray-700/30 border-gray-600 hover:bg-gray-700/50"
+                    ? "bg-red-900/40 border-red-500"
+                    : "bg-gray-900/30 border-gray-800 hover:bg-gray-800/50"
                 }`}
               >
                 <input
@@ -406,18 +484,18 @@ function App() {
                 <div
                   className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${
                     selectedTrack === "GD-Track-01"
-                      ? "border-indigo-400"
-                      : "border-gray-500"
+                      ? "border-red-400"
+                      : "border-gray-600"
                   }`}
                 >
                   {selectedTrack === "GD-Track-01" && (
-                    <div className="w-1.5 h-1.5 rounded-full bg-indigo-400"></div>
+                    <div className="w-1.5 h-1.5 rounded-full bg-red-500"></div>
                   )}
                 </div>
                 <span
-                  className={`font-medium text-sm ${
+                  className={`font-medium text-sm uppercase ${
                     selectedTrack === "GD-Track-01"
-                      ? "text-indigo-300"
+                      ? "text-red-300"
                       : "text-gray-300"
                   }`}
                 >
@@ -428,8 +506,8 @@ function App() {
               <label
                 className={`flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-md cursor-pointer border transition-all ${
                   selectedTrack === "GD-Track-02"
-                    ? "bg-indigo-900/40 border-indigo-500"
-                    : "bg-gray-700/30 border-gray-600 hover:bg-gray-700/50"
+                    ? "bg-red-900/40 border-red-500"
+                    : "bg-gray-900/30 border-gray-800 hover:bg-gray-800/50"
                 }`}
               >
                 <input
@@ -442,18 +520,18 @@ function App() {
                 <div
                   className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${
                     selectedTrack === "GD-Track-02"
-                      ? "border-indigo-400"
-                      : "border-gray-500"
+                      ? "border-red-400"
+                      : "border-gray-600"
                   }`}
                 >
                   {selectedTrack === "GD-Track-02" && (
-                    <div className="w-1.5 h-1.5 rounded-full bg-indigo-400"></div>
+                    <div className="w-1.5 h-1.5 rounded-full bg-red-500"></div>
                   )}
                 </div>
                 <span
-                  className={`font-medium text-sm ${
+                  className={`font-medium text-sm uppercase ${
                     selectedTrack === "GD-Track-02"
-                      ? "text-indigo-300"
+                      ? "text-red-300"
                       : "text-gray-300"
                   }`}
                 >
@@ -464,8 +542,8 @@ function App() {
               <label
                 className={`flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-md cursor-pointer border transition-all ${
                   selectedTrack === "GD-Track-03"
-                    ? "bg-indigo-900/40 border-indigo-500"
-                    : "bg-gray-700/30 border-gray-600 hover:bg-gray-700/50"
+                    ? "bg-red-900/40 border-red-500"
+                    : "bg-gray-900/30 border-gray-800 hover:bg-gray-800/50"
                 }`}
               >
                 <input
@@ -478,18 +556,18 @@ function App() {
                 <div
                   className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${
                     selectedTrack === "GD-Track-03"
-                      ? "border-indigo-400"
-                      : "border-gray-500"
+                      ? "border-red-400"
+                      : "border-gray-600"
                   }`}
                 >
                   {selectedTrack === "GD-Track-03" && (
-                    <div className="w-1.5 h-1.5 rounded-full bg-indigo-400"></div>
+                    <div className="w-1.5 h-1.5 rounded-full bg-red-500"></div>
                   )}
                 </div>
                 <span
-                  className={`font-medium text-sm ${
+                  className={`font-medium text-sm uppercase ${
                     selectedTrack === "GD-Track-03"
-                      ? "text-indigo-300"
+                      ? "text-red-300"
                       : "text-gray-300"
                   }`}
                 >
@@ -509,7 +587,7 @@ function App() {
         {/* Update API Key input section */}
         {!hasStoredApiKey && (
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1">
+            <label className="block text-sm font-medium text-gray-300 mb-1 uppercase tracking-wide">
               API Key
               <div className="flex gap-2">
                 <div className="relative flex-1">
@@ -518,7 +596,7 @@ function App() {
                     type="password"
                     value={apiKey}
                     onChange={(e) => setApiKey(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2 bg-gray-800 border border-gray-700 rounded-md focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400 text-white"
+                    className="w-full pl-10 pr-4 py-2 bg-gray-900 border border-gray-800 rounded-md focus:border-red-600 focus:outline-none focus:shadow-[0_0_0_1px_rgba(220,38,38,0.5),0_0_8px_rgba(220,38,38,0.4)] text-white transition-all duration-200"
                     placeholder="Enter your API key"
                   />
                 </div>
@@ -526,7 +604,7 @@ function App() {
                   type="button"
                   onClick={handleApiKeySetup}
                   disabled={isLoading || !apiKey}
-                  className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:bg-gray-600 disabled:cursor-not-allowed"
+                  className="px-4 py-2 bg-gradient-to-r from-red-600 to-red-800 text-white rounded-md border border-transparent hover:border-red-500 hover:from-red-700 hover:to-red-900 hover:shadow-[0_0_12px_rgba(220,38,38,0.6)] hover:-translate-y-0.5 transition-all duration-200 disabled:from-gray-700 disabled:to-gray-800 disabled:border-transparent disabled:text-gray-400 disabled:cursor-not-allowed disabled:shadow-none disabled:transform-none uppercase font-medium tracking-wide"
                 >
                   Set Key
                 </button>
@@ -536,35 +614,38 @@ function App() {
         )}
 
         {/* Show success message when API key is stored */}
-        {hasStoredApiKey && (
-          <div className="flex items-center gap-2 text-green-400 text-sm">
-            <span>✓ API Key is configured</span>
+        {/* {hasStoredApiKey && (
+          <div className="flex items-center gap-2 text-red-400 text-sm bg-gray-900/50 p-2 rounded border border-red-900/30">
+            <span className="text-red-500">✓</span>
+            <span>API Key is configured</span>
           </div>
-        )}
+        )} */}
 
         {/* Style Selector */}
         <div>
-          <label className="block text-sm font-medium text-gray-300 mb-1">
+          <label className="block text-sm font-medium text-gray-300 mb-1 uppercase tracking-wide">
             Summary Style
           </label>
           <div className="relative">
-            <div className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-md">
+            <div className="w-full px-4 py-2 bg-gray-900 border border-gray-800 rounded-md">
               {SUMMARY_STYLES.map((style) => (
                 <div key={style.id} className="relative">
                   <div
                     className={`flex items-center gap-2 p-2 cursor-pointer rounded-md ${
                       style.id === summaryStyle
-                        ? "bg-indigo-900/50 text-indigo-300"
-                        : "hover:bg-gray-700/50 text-gray-300"
+                        ? "bg-red-900/50 text-red-300"
+                        : "hover:bg-gray-800/50 text-gray-300"
                     }`}
                     onClick={() => setSummaryStyle(style.id)}
                     onMouseEnter={() => setShowTooltip(style.id)}
                     onMouseLeave={() => setShowTooltip("")}
                   >
                     <span className="text-lg">{style.icon}</span>
-                    <span className="flex-1">{style.label}</span>
+                    <span className="flex-1 uppercase tracking-wide font-medium">
+                      {style.label}
+                    </span>
                     {style.id === summaryStyle && (
-                      <span className="text-xs bg-indigo-900 text-indigo-200 px-2 py-1 rounded-full">
+                      <span className="text-xs bg-red-900 text-red-200 px-2 py-1 rounded-full uppercase text-[10px]">
                         Selected
                       </span>
                     )}
@@ -572,7 +653,7 @@ function App() {
 
                   {/* Tooltip */}
                   {showTooltip === style.id && (
-                    <div className="absolute z-10 px-3 py-2 text-sm text-white bg-gray-800 rounded-md -top-2 left-1/2 transform -translate-x-1/2 -translate-y-full shadow-lg border border-gray-700 whitespace-nowrap">
+                    <div className="absolute z-10 px-3 py-2 text-sm text-white bg-gray-900 rounded-md -top-2 left-1/2 transform -translate-x-1/2 -translate-y-full shadow-lg border border-gray-800 whitespace-nowrap">
                       {style.description}
                     </div>
                   )}
@@ -583,56 +664,39 @@ function App() {
         </div>
 
         {/* Error Message */}
-        {error && (
+        {/* {error && (
           <div className="flex items-center gap-2 text-red-400 text-sm">
             <AlertCircle className="w-4 h-4" />
             <span>{error}</span>
           </div>
-        )}
+        )} */}
 
         {/* Add this status indicator */}
-        <div
+        {/* <div
           className={`mb-4 text-sm ${
             isGameplayAvailable ? "text-green-600" : "text-red-400"
           }`}
         >
           {statusMessage}
-        </div>
+        </div> */}
 
         {/* Update Submit Button */}
         <div className="flex gap-2">
           <button
             type="submit"
             disabled={isLoading || !isGameplayAvailable || !hasStoredApiKey}
-            style={{
-              backgroundColor:
-                isLoading || !isGameplayAvailable || !hasStoredApiKey
-                  ? "#4B5563"
-                  : "#6366F1",
-              color:
-                isLoading || !isGameplayAvailable || !hasStoredApiKey
-                  ? "#9CA3AF"
-                  : "white",
-              cursor:
-                isLoading || !isGameplayAvailable || !hasStoredApiKey
-                  ? "not-allowed"
-                  : "pointer",
-              opacity:
-                isLoading || !isGameplayAvailable || !hasStoredApiKey ? 0.6 : 1,
-            }}
-            className="w-full py-2 px-4 rounded transition-colors hover:bg-indigo-600"
+            className={`w-full py-2 px-4 rounded transition-all uppercase tracking-wide font-medium border ${
+              isLoading || !isGameplayAvailable || !hasStoredApiKey
+                ? "bg-gray-800 text-gray-500 cursor-not-allowed opacity-60 border-transparent"
+                : "bg-gradient-to-r from-red-600 to-red-800 text-white border-transparent hover:border-red-500 hover:shadow-lg hover:shadow-red-900/30 hover:-translate-y-0.5"
+            }`}
           >
             {isLoading ? "Generating..." : "Generate Summary"}
           </button>
           <button
             type="button"
             onClick={handleJSONSubmit}
-            style={{
-              backgroundColor: "#6366F1",
-              color: "white",
-              cursor: "pointer",
-            }}
-            className="w-full py-2 px-4 rounded transition-colors hover:bg-indigo-600"
+            className="w-full py-2 px-4 rounded transition-all bg-gradient-to-r from-red-600 to-red-800 text-white border border-transparent hover:border-red-500 hover:shadow-lg hover:shadow-red-900/30 hover:-translate-y-0.5 uppercase tracking-wide font-medium"
           >
             Run
           </button>
