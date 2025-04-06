@@ -45,6 +45,20 @@ chrome.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
       sendResponse({ error: "No track specified" });
       return true;
     }
+
+    // Validate that the track is one of the allowed tracks before proceeding
+    const validTracks = ["GD-Track-01", "GD-Track-02", "GD-Track-03"];
+    if (!validTracks.includes(message.track)) {
+      console.log(
+        `Invalid track name: "${message.track}". Using default track.`
+      );
+      sendResponse({ error: "Invalid track name" });
+      return true;
+    }
+
+    // Explicitly save the track to Chrome storage for consistency
+    await chrome.storage.local.set({ selectedTrack: message.track });
+
     await redirectToTrack(message.track);
     if (message.isAIDriverSet) {
       await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -455,7 +469,33 @@ function showSummaryDialog(summary: string) {
   };
 
   const closeButton = dialog.querySelector(".close-button");
-  closeButton?.addEventListener("click", closeDialog);
+  closeButton?.addEventListener("click", async () => {
+    closeDialog();
+    document.querySelectorAll("button.button").forEach((btn) => {
+      if (
+        btn.textContent?.trim() === "Exit" &&
+        btn instanceof HTMLButtonElement
+      ) {
+        console.log("Click on Exit button.");
+        btn.click();
+      }
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    //Click play button Main Menu
+    const buttons = document.querySelectorAll("button.button-image");
+    const lastButton = Array.from(buttons)
+      .reverse()
+      .find(
+        (button) => button.querySelector("p")?.textContent?.trim() === "Play"
+      );
+
+    if (lastButton && lastButton instanceof HTMLButtonElement) {
+      lastButton.click();
+    } else {
+      console.warn("No Menu Play button found.");
+    }
+  });
 
   // Close dialog when clicking outside of it
   backdrop.addEventListener("click", (event) => {
@@ -698,6 +738,12 @@ async function initializeRecorder() {
 
   let recordingState: "idle" | "recording" | "ended" = "idle";
 
+  // Add the leaderboard button
+  addLeaderboardButton();
+
+  // Add the reset player button
+  addResetPlayerButton();
+
   // Call the new function to setup Play button listener
   setupPlayButtonListener();
 
@@ -718,6 +764,20 @@ async function initializeRecorder() {
       if (canvasRecorder) {
         canvasRecorder.stopRecording();
         recordingState = "ended";
+
+        // Save race to leaderboard ONLY if the time-announcer exists
+        // This ensures the race was properly finished
+        if (timeAnnouncer) {
+          const raceTime = getRaceTime();
+          if (raceTime) {
+            saveRaceToLeaderboard(raceTime);
+            console.log("Race completed successfully, saved to leaderboard");
+          }
+        } else {
+          console.log(
+            "Race ended without time-announcer, not saving to leaderboard"
+          );
+        }
 
         // Show the summary style dialog after a small delay
         setTimeout(() => {
@@ -1917,5 +1977,1376 @@ function loadGameplayRecording(): Promise<Blob | null> {
       console.error("Error opening database:", request.error);
       reject(request.error);
     };
+  });
+}
+
+// Add these functions to create and show the leaderboard
+
+// Add a floating button to open the leaderboard
+function addLeaderboardButton() {
+  // Remove existing button if it exists
+  const existingButton = document.getElementById("leaderboard-button");
+  if (existingButton) {
+    existingButton.remove();
+  }
+
+  const button = document.createElement("button");
+  button.id = "leaderboard-button";
+  button.innerHTML = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 20v-6M6 20V10M18 20V4"/>
+    </svg>
+    Leaderboard
+  `;
+
+  button.style.cssText = `
+    position: fixed;
+    bottom: 60px;
+    right: 20px;
+    z-index: 9000;
+    background: linear-gradient(135deg, #dc2626, #991b1b);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 8px 12px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    transition: all 0.2s ease;
+  `;
+
+  button.addEventListener("mouseover", () => {
+    button.style.transform = "translateY(-2px)";
+    button.style.boxShadow =
+      "0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)";
+  });
+
+  button.addEventListener("mouseout", () => {
+    button.style.transform = "translateY(0)";
+    button.style.boxShadow =
+      "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)";
+  });
+
+  button.addEventListener("click", () => {
+    showLeaderboard();
+  });
+
+  document.body.appendChild(button);
+}
+
+// Show the leaderboard dialog
+function showLeaderboard() {
+  // Get the list of tracks
+  const tracks = ["GD-Track-01", "GD-Track-02", "GD-Track-03"];
+  const trackLabels = ["Track 1", "Track 2", "Track 3"];
+
+  // Get currently selected track from storage or default to first track
+  let selectedTrackIndex = 0;
+
+  // Try to get last selected track from chrome storage
+  chrome.storage.local.get(["selectedTrack"], (result) => {
+    if (result.selectedTrack) {
+      const index = tracks.findIndex((track) => track === result.selectedTrack);
+      if (index >= 0) selectedTrackIndex = index;
+      renderLeaderboard(selectedTrackIndex);
+    } else {
+      renderLeaderboard(0); // Default to first track
+    }
+  });
+
+  // Create backdrop
+  const backdrop = document.createElement("div");
+  backdrop.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.85);
+    backdrop-filter: blur(8px);
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: fadeIn 0.3s ease-out;
+  `;
+
+  // Create dialog
+  const dialog = document.createElement("div");
+  dialog.style.cssText = `
+    background: #0a0a0a;
+    color: #ffffff;
+    border-radius: 12px;
+    width: 600px;
+    max-width: 90%;
+    padding: 0;
+    box-shadow: 0 20px 25px -5px rgba(220, 38, 38, 0.25), 0 8px 10px -6px rgba(0, 0, 0, 0.3);
+    overflow: hidden;
+    animation: slideUp 0.4s ease-out;
+    border: 1px solid rgba(220, 38, 38, 0.3);
+    max-height: 90vh;
+    overflow-y: auto;
+  `;
+
+  // Add shared CSS styles
+  dialog.innerHTML = `
+    <style>
+      @keyframes fadeIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
+      }
+      
+      @keyframes slideUp {
+        from { opacity: 0; transform: translateY(20px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+      
+      @keyframes pulse {
+        0% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.4); }
+        70% { box-shadow: 0 0 0 10px rgba(220, 38, 38, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0); }
+      }
+      
+      .leaderboard-header {
+        text-align: center;
+        padding: 20px;
+        background: linear-gradient(135deg, #dc2626, #991b1b);
+        color: white;
+        position: relative;
+        overflow: hidden;
+        border-bottom: 2px solid rgba(255, 255, 255, 0.1);
+      }
+      
+      .leaderboard-header::after {
+        content: '';
+        position: absolute;
+        top: -50%;
+        left: -50%;
+        width: 200%;
+        height: 200%;
+        background: linear-gradient(135deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0) 60%);
+        transform: rotate(30deg);
+        pointer-events: none;
+      }
+      
+      .leaderboard-header h2 {
+        font-size: 1.6rem;
+        font-weight: 800;
+        color: white;
+        letter-spacing: -0.025em;
+        margin: 0;
+        text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        text-transform: uppercase;
+        font-family: monospace;
+      }
+      
+      .track-tabs {
+        display: flex;
+        margin: 0;
+        padding: 0;
+        background: #1a1a1a;
+        border-bottom: 2px solid rgba(220, 38, 38, 0.5);
+      }
+      
+      .track-tab {
+        flex: 1;
+        text-align: center;
+        padding: 12px 16px;
+        font-size: 1rem;
+        font-weight: 700;
+        color: #e5e7eb;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        border-bottom: 3px solid transparent;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+      
+      .track-tab:hover {
+        background: rgba(255, 255, 255, 0.05);
+      }
+      
+      .track-tab.active {
+        color: white;
+        background: rgba(220, 38, 38, 0.2);
+        border-bottom-color: #dc2626;
+      }
+      
+      .leaderboard-content {
+        padding: 0;
+      }
+      
+      /* Enhanced AI Time Section Styles */
+      .ai-time-section {
+        background: rgba(20, 20, 31, 0.9);
+        margin: 0;
+        position: relative;
+        overflow: hidden;
+        box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
+        border-bottom: 1px solid rgba(30, 41, 59, 0.8);
+      }
+      
+      .ai-time-section::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: 
+          radial-gradient(circle at top right, rgba(220, 38, 38, 0.1), transparent 70%),
+          radial-gradient(circle at bottom left, rgba(16, 185, 129, 0.07), transparent 70%);
+        pointer-events: none;
+      }
+      
+      @keyframes gradientShift {
+        0% { background-position: 0% 50%; }
+        50% { background-position: 100% 50%; }
+        100% { background-position: 0% 50%; }
+      }
+      
+      .ai-time-header {
+        padding: 14px 16px;
+        font-size: 1.3rem;
+        font-weight: 700;
+        color: white;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        background: linear-gradient(110deg, rgba(30, 41, 59, 0.95), rgba(15, 23, 42, 0.95));
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        border-left: 4px solid #dc2626;
+        position: relative;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+        overflow: hidden;
+      }
+      
+      .ai-time-header::after {
+        content: '';
+        position: absolute;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        width: 30%;
+        background: linear-gradient(90deg, transparent, rgba(220, 38, 38, 0.1), transparent);
+        transform: skewX(-30deg);
+        animation: sweepLight 3s ease-in-out infinite;
+      }
+      
+      @keyframes sweepLight {
+        0% { transform: skewX(-30deg) translateX(-200%); }
+        100% { transform: skewX(-30deg) translateX(400%); }
+      }
+      
+      .ai-badge {
+        background: linear-gradient(135deg, #dc2626, #991b1b);
+        color: white;
+        padding: 3px 9px;
+        border-radius: 4px;
+        font-size: 0.9rem;
+        font-weight: 800;
+        letter-spacing: 1px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+        position: relative;
+        overflow: hidden;
+      }
+      
+      .ai-badge::after {
+        content: '';
+        position: absolute;
+        top: -50%;
+        left: -50%;
+        width: 200%;
+        height: 200%;
+        background: linear-gradient(rgba(255,255,255,0.2), transparent);
+        transform: rotate(30deg);
+      }
+      
+      .ai-time-entry {
+        display: flex;
+        align-items: center;
+        padding: 16px 20px;
+        transition: all 0.3s ease;
+        border-left: 4px solid transparent;
+        position: relative;
+        background: linear-gradient(90deg, 
+          rgba(17, 24, 39, 0.7), 
+          rgba(17, 24, 39, 0.5)
+        );
+      }
+      
+      .ai-time-entry:hover {
+        background: linear-gradient(90deg, 
+          rgba(17, 24, 39, 0.8), 
+          rgba(17, 24, 39, 0.6)
+        );
+        border-left-color: rgba(220, 38, 38, 0.5);
+      }
+      
+      @keyframes pulse-border {
+        0% { border-color: rgba(220, 38, 38, 0.2); }
+        50% { border-color: rgba(220, 38, 38, 0.6); }
+        100% { border-color: rgba(220, 38, 38, 0.2); }
+      }
+      
+      .ai-time-entry::before {
+        content: '';
+        position: absolute;
+        left: 0;
+        top: 0;
+        height: 100%;
+        width: 4px;
+        background: linear-gradient(to bottom, #dc2626, #991b1b);
+        opacity: 0.7;
+        animation: pulse-border 2s infinite;
+      }
+      
+      .ai-car {
+        position: relative;
+        animation: carHover 2s ease-in-out infinite;
+        filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.4));
+        transition: transform 0.3s ease;
+      }
+      
+      .ai-time-entry:hover .ai-car {
+        transform: scale(1.1) translateY(-2px);
+        filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.6));
+      }
+      
+      @keyframes carHover {
+        0%, 100% { transform: translateY(0); }
+        50% { transform: translateY(-4px); }
+      }
+      
+      .ai-car::after {
+        content: '';
+        position: absolute;
+        bottom: -8px;
+        left: 15%;
+        width: 70%;
+        height: 6px;
+        background: rgba(0, 0, 0, 0.3);
+        filter: blur(3px);
+        border-radius: 50%;
+        animation: shadowPulse 2s ease-in-out infinite;
+      }
+      
+      @keyframes shadowPulse {
+        0%, 100% { transform: scaleX(1); opacity: 0.4; }
+        50% { transform: scaleX(0.7); opacity: 0.1; }
+      }
+      
+      .ai-rank {
+        font-size: 1.3rem;
+        color: #dc2626;
+        font-weight: 900;
+        text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+        margin-left: 5px;
+        position: relative;
+      }
+      
+      .ai-rank::after {
+        content: '';
+        position: absolute;
+        bottom: -4px;
+        left: 0;
+        width: 100%;
+        height: 2px;
+        background: linear-gradient(to right, #dc2626, transparent);
+      }
+      
+      .ai-time {
+        font-weight: 800;
+        font-size: 1.6rem;
+        color: #f8fafc;
+        position: relative;
+        letter-spacing: 1px;
+        text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+        font-family: 'Courier New', monospace;
+        padding: 5px 0;
+        transition: all 0.3s ease;
+      }
+      
+      .ai-time-entry:hover .ai-time {
+        color: white;
+        text-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+      }
+      
+      .ai-time::after {
+        content: 'TARGET';
+        position: absolute;
+        font-size: 0.7rem;
+        top: -10px;
+        left: 50%;
+        transform: translateX(-50%);
+        color: #dc2626;
+        font-weight: 700;
+        letter-spacing: 2px;
+        text-shadow: none;
+        background: rgba(0, 0, 0, 0.2);
+        padding: 2px 8px;
+        border-radius: 2px;
+        white-space: nowrap;
+      }
+      
+      .ai-time::before {
+        content: '';
+        position: absolute;
+        bottom: -3px;
+        left: 0;
+        width: 100%;
+        height: 1px;
+        background: linear-gradient(to right, transparent, rgba(255, 255, 255, 0.5), transparent);
+      }
+      
+      .human-times-header {
+        padding: 12px 16px;
+        font-size: 1.2rem;
+        font-weight: 700;
+        color: white;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        background: linear-gradient(to right, rgba(30, 41, 59, 0.9), rgba(15, 23, 42, 0.9));
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      }
+      
+      .leaderboard-entry {
+        display: flex;
+        align-items: center;
+        padding: 12px 16px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        transition: background-color 0.2s ease;
+      }
+      
+      .leaderboard-entry:nth-child(odd) {
+        background-color: rgba(255, 255, 255, 0.02);
+      }
+      
+      .leaderboard-entry:hover {
+        background-color: rgba(220, 38, 38, 0.1);
+      }
+      
+      .entry-car-container {
+        width: 40px;
+        height: 40px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-right: 8px;
+      }
+      
+      .entry-car {
+        width: 35px;
+        height: 35px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 3px;
+        color: rgba(255, 255, 255, 0.9);
+      }
+      
+      .entry-rank {
+        width: 50px;
+        font-size: 1.2rem;
+        font-weight: 800;
+        color: white;
+        font-family: monospace;
+        text-align: center;
+      }
+      
+      .entry-name {
+        flex: 1;
+        font-size: 1.2rem;
+        font-weight: 600;
+        color: white;
+        padding: 0 15px;
+        font-family: monospace;
+        text-align: left;
+      }
+      
+      .entry-time {
+        width: 120px;
+        font-size: 1.2rem;
+        font-weight: 600;
+        color: white;
+        font-family: monospace;
+        text-align: center;
+      }
+      
+      .no-times-message {
+        padding: 32px 16px;
+        text-align: center;
+        color: rgba(255, 255, 255, 0.7);
+        font-style: italic;
+      }
+      
+      .close-button {
+        display: block;
+        width: calc(100% - 32px);
+        margin: 16px auto;
+        padding: 12px;
+        background: linear-gradient(to right, #dc2626, #b91c1c);
+        color: white;
+        border: none;
+        border-radius: 8px;
+        font-size: 1rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+      
+      .close-button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 10px -1px rgba(220, 38, 38, 0.4);
+        animation: pulse 1.5s infinite;
+      }
+    </style>
+    
+    <div class="leaderboard-header">
+      <h2>Leaderboard</h2>
+    </div>
+    
+    <div class="track-tabs">
+      ${tracks
+        .map(
+          (track, index) => `
+        <div class="track-tab ${
+          index === selectedTrackIndex ? "active" : ""
+        }" data-track="${track}">
+          ${trackLabels[index]}
+        </div>
+      `
+        )
+        .join("")}
+    </div>
+    
+    <div id="leaderboard-data-container">
+      <!-- Leaderboard data will be rendered here -->
+    </div>
+    
+    <button class="close-button">Close Leaderboard</button>
+  `;
+
+  // Function to render the leaderboard for a specific track
+  function renderLeaderboard(trackIndex: number) {
+    const track = tracks[trackIndex];
+    const trackLabel = trackLabels[trackIndex];
+
+    // Update active tab
+    const allTabs = dialog.querySelectorAll(".track-tab");
+    allTabs.forEach((tab, idx) => {
+      if (idx === trackIndex) {
+        tab.classList.add("active");
+      } else {
+        tab.classList.remove("active");
+      }
+    });
+
+    // Get track-specific leaderboard data
+    const leaderboardKey = `raceLeaderboard_${track}`;
+    let leaderboardData: LeaderboardEntry[] = [];
+    try {
+      const storedLeaderboard = localStorage.getItem(leaderboardKey);
+      if (storedLeaderboard) {
+        leaderboardData = JSON.parse(storedLeaderboard);
+      }
+    } catch (error) {
+      console.error(`Error loading leaderboard data for ${track}:`, error);
+    }
+
+    // Separate user times and AI times
+    const userTimes = leaderboardData.filter((entry) => !entry.isAI);
+    const aiTimes = leaderboardData.filter((entry) => entry.isAI);
+
+    // Create AI Time to Beat entry (if available)
+    let aiTimeToBeat = null;
+    if (aiTimes.length > 0) {
+      // Sort AI times to find the fastest
+      aiTimes.sort((a, b) => {
+        const timeA = a.time
+          .split(":")
+          .reduce((acc, val) => acc * 60 + parseFloat(val), 0);
+        const timeB = b.time
+          .split(":")
+          .reduce((acc, val) => acc * 60 + parseFloat(val), 0);
+        return timeA - timeB;
+      });
+
+      // Take the fastest AI time
+      aiTimeToBeat = aiTimes[0];
+    }
+
+    // Add position/rank to each user entry
+    const rankedUserData = userTimes.map((entry, index) => {
+      const position = index + 1;
+      let rank: string;
+
+      // Convert position to rank with suffix
+      if (position === 1) rank = "1st";
+      else if (position === 2) rank = "2nd";
+      else if (position === 3) rank = "3rd";
+      else rank = `${position}th`;
+
+      return { ...entry, rank };
+    });
+
+    // Add these styles to the existing <style> tag in your dialog
+    const additionalStyles = `
+      /* Advanced AI Time Section Styles */
+      .ai-time-section {
+        background: linear-gradient(170deg, rgba(17, 24, 39, 0.95), rgba(10, 15, 25, 0.98));
+        margin: 0;
+        position: relative;
+        overflow: hidden;
+        box-shadow: 0 8px 20px -6px rgba(0, 0, 0, 0.5);
+        border-bottom: 1px solid rgba(30, 41, 59, 0.8);
+      }
+      
+      .ai-time-section::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: 
+          radial-gradient(circle at top right, rgba(220, 38, 38, 0.15), transparent 70%),
+          radial-gradient(circle at bottom left, rgba(16, 185, 129, 0.07), transparent 70%),
+          linear-gradient(to right, rgba(0, 0, 0, 0.2), transparent 80%);
+        pointer-events: none;
+      }
+      
+      .ai-time-section::after {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: repeating-linear-gradient(
+          -45deg,
+          transparent,
+          transparent 10px,
+          rgba(220, 38, 38, 0.03) 10px,
+          rgba(220, 38, 38, 0.03) 20px
+        );
+        pointer-events: none;
+      }
+      
+      .ai-time-header {
+        padding: 16px;
+        font-size: 1.3rem;
+        font-weight: 700;
+        color: white;
+        text-transform: uppercase;
+        letter-spacing: 1.5px;
+        background: linear-gradient(110deg, rgba(20, 20, 35, 0.95), rgba(15, 15, 25, 0.95));
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        border-left: 4px solid #dc2626;
+        position: relative;
+        box-shadow: 0 3px 10px rgba(0, 0, 0, 0.3);
+        overflow: hidden;
+        z-index: 1;
+      }
+      
+      .ai-time-header::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: linear-gradient(110deg, transparent, rgba(220, 38, 38, 0.2));
+        z-index: -1;
+      }
+      
+      .ai-time-header::after {
+        content: '';
+        position: absolute;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        width: 30%;
+        background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+        transform: skewX(-30deg);
+        animation: sweepLight 4s ease-in-out infinite;
+        z-index: 0;
+      }
+      
+      @keyframes sweepLight {
+        0% { transform: skewX(-30deg) translateX(-300%); }
+        100% { transform: skewX(-30deg) translateX(500%); }
+      }
+      
+      .ai-badge {
+        background: linear-gradient(135deg, #dc2626, #991b1b);
+        color: white;
+        padding: 5px 10px;
+        border-radius: 6px;
+        font-size: 0.95rem;
+        font-weight: 800;
+        letter-spacing: 1.5px;
+        box-shadow: 0 3px 6px rgba(0, 0, 0, 0.3);
+        position: relative;
+        overflow: hidden;
+        transform: perspective(100px) rotateX(2deg);
+        transform-origin: top;
+      }
+      
+      .ai-badge::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 50%;
+        background: linear-gradient(to bottom, rgba(255,255,255,0.4), transparent);
+        border-radius: 4px 4px 0 0;
+      }
+      
+      .ai-badge::after {
+        content: '';
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        height: 6px;
+        background: linear-gradient(to right, transparent, rgba(255,255,255,0.4), transparent);
+        animation: badgeScan 2s linear infinite;
+      }
+      
+      @keyframes badgeScan {
+        0% { transform: translateX(-100%); }
+        100% { transform: translateX(100%); }
+      }
+      
+      .ai-time-entry {
+    display: flex;
+    align-items: center;
+        padding: 20px;
+        transition: all 0.3s ease;
+        border-left: 4px solid transparent;
+        position: relative;
+        background: linear-gradient(90deg, 
+          rgba(15, 23, 42, 0.8), 
+          rgba(15, 23, 42, 0.6)
+        );
+      }
+      
+      .ai-time-entry:hover {
+        background: linear-gradient(90deg, 
+          rgba(20, 29, 47, 0.9), 
+          rgba(15, 23, 42, 0.7)
+        );
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+      }
+      
+      .ai-time-entry::before {
+        content: '';
+        position: absolute;
+    left: 0;
+        top: 0;
+        height: 100%;
+        width: 4px;
+        background: linear-gradient(to bottom, #dc2626, #991b1b);
+        opacity: 0.8;
+        animation: pulse-border 2s infinite;
+        box-shadow: 0 0 8px rgba(220, 38, 38, 0.4);
+      }
+      
+      .ai-icon-container {
+        width: 48px;
+        height: 48px;
+        margin-right: 15px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+        position: relative;
+      }
+      
+      .ai-icon {
+        width: 100%;
+        height: 100%;
+        position: relative;
+        animation: floatIcon 3s ease-in-out infinite;
+        filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.5));
+      }
+      
+      @keyframes floatIcon {
+        0%, 100% { transform: translateY(0); }
+        50% { transform: translateY(-5px); }
+      }
+      
+      .ai-icon::after {
+        content: '';
+        position: absolute;
+        bottom: -5px;
+        left: 15%;
+        width: 70%;
+        height: 10px;
+        background: rgba(0, 0, 0, 0.3);
+        filter: blur(4px);
+        border-radius: 50%;
+        animation: iconShadow 3s ease-in-out infinite;
+      }
+      
+      @keyframes iconShadow {
+        0%, 100% { transform: scaleX(1); opacity: 0.3; }
+        50% { transform: scaleX(0.7); opacity: 0.15; }
+      }
+      
+      .ai-rank {
+        font-size: 1.4rem;
+        color: #dc2626;
+        font-weight: 900;
+        text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+        margin-left: 8px;
+        position: relative;
+        letter-spacing: 1px;
+      }
+      
+      .ai-rank::after {
+        content: '';
+        position: absolute;
+        bottom: -4px;
+        left: 0;
+        width: 100%;
+        height: 2px;
+        background: linear-gradient(to right, #dc2626, transparent);
+      }
+      
+      .ai-time {
+        font-weight: 800;
+        font-size: 1.8rem;
+        color: #f8fafc;
+        position: relative;
+        letter-spacing: 2px;
+        text-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+        font-family: 'Courier New', monospace;
+        padding: 5px 10px;
+        transition: all 0.3s ease;
+        background: rgba(0, 0, 0, 0.2);
+        border-radius: 4px;
+        box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.3);
+      }
+      
+      .ai-time-entry:hover .ai-time {
+        color: white;
+        text-shadow: 0 0 15px rgba(255, 255, 255, 0.7);
+        letter-spacing: 2.5px;
+        transform: scale(1.05);
+      }
+      
+      .ai-time::after {
+        content: 'TARGET';
+        position: absolute;
+        font-size: 0.7rem;
+        top: -12px;
+        left: 50%;
+        transform: translateX(-50%);
+        color: #f8fafc;
+        font-weight: 700;
+        letter-spacing: 2px;
+        text-shadow: none;
+        background: linear-gradient(to right, #991b1b, #dc2626);
+        padding: 3px 10px;
+        border-radius: 3px;
+        white-space: nowrap;
+      }
+      
+      .ai-time::before {
+        content: '';
+        position: absolute;
+        bottom: -3px;
+        left: 10%;
+        width: 80%;
+        height: 1px;
+        background: linear-gradient(to right, transparent, rgba(255, 255, 255, 0.6), transparent);
+      }
+      
+      @keyframes pulse-glow {
+        0%, 100% { text-shadow: 0 0 10px rgba(255, 255, 255, 0.2); }
+        50% { text-shadow: 0 0 20px rgba(255, 255, 255, 0.5); }
+      }
+    `;
+
+    // Generate AI Time to Beat HTML with enhanced styling and new bot icon
+    const aiTimeHTML = aiTimeToBeat
+      ? `
+        <div class="ai-time-section">
+          <div class="ai-time-header">
+            <span class="ai-badge">AI</span>
+            <span>Time to Beat</span>
+          </div>
+          <div class="ai-time-entry">
+            <div class="ai-icon-container">
+              <div class="ai-icon">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="100%" height="100%" fill="none">
+                  <!-- Bot Head Base -->
+                  <rect x="4" y="4" width="16" height="12" rx="2" fill="rgba(30, 30, 40, 0.9)" stroke="${aiTimeToBeat.carColor}" stroke-width="1.2" />
+                  
+                  <!-- Bot Eyes -->
+                  <rect x="7" y="8" width="3" height="2" rx="1" fill="${aiTimeToBeat.carColor}" opacity="0.8">
+                    <animate attributeName="opacity" values="0.8;1;0.8" dur="3s" repeatCount="indefinite" />
+                  </rect>
+                  <rect x="14" y="8" width="3" height="2" rx="1" fill="${aiTimeToBeat.carColor}" opacity="0.8">
+                    <animate attributeName="opacity" values="0.8;1;0.8" dur="3s" repeatCount="indefinite" />
+                  </rect>
+                  
+                  <!-- Bot Antennas -->
+                  <line x1="9" y1="4" x2="9" y2="2" stroke="${aiTimeToBeat.carColor}" stroke-width="1.2">
+                    <animate attributeName="y2" values="2;1.5;2" dur="2s" repeatCount="indefinite" />
+                  </line>
+                  <line x1="15" y1="4" x2="15" y2="2" stroke="${aiTimeToBeat.carColor}" stroke-width="1.2">
+                    <animate attributeName="y2" values="2;1.5;2" dur="2.5s" repeatCount="indefinite" />
+                  </line>
+                  <circle cx="9" cy="1.5" r="0.5" fill="#ffffff" opacity="0.8">
+                    <animate attributeName="opacity" values="0.8;1;0.8" dur="2s" repeatCount="indefinite" />
+                  </circle>
+                  <circle cx="15" cy="1.5" r="0.5" fill="#ffffff" opacity="0.8">
+                    <animate attributeName="opacity" values="0.8;1;0.8" dur="2.5s" repeatCount="indefinite" />
+                  </circle>
+                  
+                  <!-- Bot Mouth/Speaker -->
+                  <rect x="8" y="12" width="8" height="1.5" rx="0.75" fill="rgba(255, 255, 255, 0.5)" opacity="0.7" />
+                  <line x1="9" y1="12.75" x2="15" y2="12.75" stroke="${aiTimeToBeat.carColor}" stroke-width="0.5" opacity="0.9" stroke-dasharray="1 0.5">
+                    <animate attributeName="stroke-dashoffset" values="0;6" dur="3s" repeatCount="indefinite" />
+                  </line>
+                  
+                  <!-- Bot Neck -->
+                  <rect x="10" y="16" width="4" height="2" fill="rgba(30, 30, 40, 0.9)" stroke="${aiTimeToBeat.carColor}" stroke-width="0.7" />
+                  
+                  <!-- Bot Body (Racing Theme) -->
+                  <path d="M8 18H16L18 22H6L8 18Z" fill="rgba(30, 30, 40, 0.9)" stroke="${aiTimeToBeat.carColor}" stroke-width="1" />
+                  
+                  <!-- Racing Stripes -->
+                  <line x1="9" y1="19" x2="9" y2="22" stroke="${aiTimeToBeat.carColor}" stroke-width="0.7" opacity="0.8" />
+                  <line x1="15" y1="19" x2="15" y2="22" stroke="${aiTimeToBeat.carColor}" stroke-width="0.7" opacity="0.8" />
+                  
+                  <!-- Circuit Board Pattern -->
+                  <path d="M6 7L4.5 7" stroke="rgba(255, 255, 255, 0.3)" stroke-width="0.5" />
+                  <path d="M6 10L4.5 10" stroke="rgba(255, 255, 255, 0.3)" stroke-width="0.5" />
+                  <path d="M18 7L19.5 7" stroke="rgba(255, 255, 255, 0.3)" stroke-width="0.5" />
+                  <path d="M18 10L19.5 10" stroke="rgba(255, 255, 255, 0.3)" stroke-width="0.5" />
+                  
+                  <!-- Digital Effects -->
+                  <path d="M7 15.5L8 15.5" stroke="${aiTimeToBeat.carColor}" stroke-width="0.5" opacity="0.7">
+                    <animate attributeName="opacity" values="0.7;1;0.7" dur="1s" repeatCount="indefinite" />
+                  </path>
+                  <path d="M16 15.5L17 15.5" stroke="${aiTimeToBeat.carColor}" stroke-width="0.5" opacity="0.7">
+                    <animate attributeName="opacity" values="0.7;1;0.7" dur="1.5s" repeatCount="indefinite" />
+                  </path>
+                  
+                  <!-- Mechanical Joints -->
+                  <circle cx="8" cy="18" r="0.5" fill="#ffffff" opacity="0.7" />
+                  <circle cx="16" cy="18" r="0.5" fill="#ffffff" opacity="0.7" />
+                  
+                  <!-- Power Indicator -->
+                  <circle cx="12" cy="16" r="0.5" fill="${aiTimeToBeat.carColor}" opacity="0.8">
+                    <animate attributeName="opacity" values="0.8;1;0.8" dur="1s" repeatCount="indefinite" />
+                  </circle>
+                </svg>
+              </div>
+            </div>
+            <div class="ai-rank">AI</div>
+            <div class="entry-time ai-time" style="flex: 1; text-align: center;">${aiTimeToBeat.time}</div>
+          </div>
+        </div>
+      `
+      : "";
+
+    // Generate user entries HTML or show message if no entries
+    const userEntriesHTML =
+      rankedUserData.length > 0
+        ? rankedUserData
+            .map(
+              (entry) => `
+      <div class="leaderboard-entry">
+        <div class="entry-car-container">
+          <div class="entry-car" style="background-color: ${entry.carColor}">
+            <svg viewBox="0 0 100 50" xmlns="http://www.w3.org/2000/svg">
+              <path d="M20,35 L30,15 L70,15 L80,35 Z" fill="currentColor" />
+              <circle cx="30" cy="40" r="8" fill="#111" />
+              <circle cx="70" cy="40" r="8" fill="#111" />
+            </svg>
+          </div>
+        </div>
+        <div class="entry-rank">${entry.rank}</div>
+        <div class="entry-name">${entry.name}</div>
+        <div class="entry-time">${entry.time}</div>
+      </div>
+    `
+            )
+            .join("")
+        : `<div class="no-times-message">No race times recorded for ${trackLabel} yet. Complete a race to see your time here!</div>`;
+
+    // Update the container with the generated HTML and inject additional styles
+    const container = dialog.querySelector("#leaderboard-data-container");
+    if (container) {
+      container.innerHTML = `
+        ${aiTimeHTML}
+        <div class="human-times-header">Driver Times - ${trackLabel}</div>
+        <div class="leaderboard-content">
+          ${userEntriesHTML}
+        </div>
+      `;
+    }
+
+    // Inject additional styles if they don't already exist
+    const existingStyle = dialog.querySelector("style");
+    if (
+      existingStyle &&
+      !existingStyle?.textContent?.includes("ai-icon-container")
+    ) {
+      existingStyle.textContent += additionalStyles;
+    }
+  }
+
+  // Set up tab click handlers
+  document.body.appendChild(backdrop);
+  backdrop.appendChild(dialog);
+
+  // Add event listeners to tabs
+  const tabs = dialog.querySelectorAll(".track-tab");
+  tabs.forEach((tab, index) => {
+    tab.addEventListener("click", () => {
+      selectedTrackIndex = index;
+      const trackName = tab.getAttribute("data-track");
+      if (trackName) {
+        chrome.storage.local.set({ selectedTrack: trackName });
+      }
+      renderLeaderboard(index);
+    });
+  });
+
+  // Close button functionality
+  const closeDialog = () => {
+    backdrop.remove();
+  };
+
+  const closeButton = dialog.querySelector(".close-button");
+  closeButton?.addEventListener("click", closeDialog);
+
+  // Close dialog when clicking outside of it
+  backdrop.addEventListener("click", (event) => {
+    if (event.target === backdrop) {
+      closeDialog();
+    }
+  });
+
+  // Close dialog when pressing Escape key
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      closeDialog();
+    }
+  });
+}
+
+// Add these functions for leaderboard persistence
+
+// Define the structure of a leaderboard entry
+interface LeaderboardEntry {
+  name: string;
+  time: string;
+  track: string;
+  timestamp: string;
+  carColor: string;
+  isAI: boolean; // New field to identify AI vs user times
+}
+
+// Function to save race result to leaderboard in local storage
+async function saveRaceToLeaderboard(time: string) {
+  try {
+    // Get the player name, selected track, and AI status from chrome storage
+    const result = await chrome.storage.local.get([
+      "playerName",
+      "selectedTrack",
+      "aiDriverEnabled",
+    ]);
+    const playerName = result.playerName || "Unknown Driver";
+    const track = result.selectedTrack;
+    const isAI = result.aiDriverEnabled === "yes";
+
+    // If no valid track is selected, don't save the entry
+    if (
+      !track ||
+      !["GD-Track-01", "GD-Track-02", "GD-Track-03"].includes(track)
+    ) {
+      console.log(
+        "No valid track found in storage, discarding leaderboard entry"
+      );
+      return;
+    }
+
+    // Generate a random car color if one doesn't exist for this player
+    const getPlayerColor = (name: string) => {
+      // Colors that match our red/black F1 theme but provide variety
+      const colors = [
+        "#ef4444",
+        "#dc2626",
+        "#b91c1c", // Reds
+        "#f97316",
+        "#ea580c", // Oranges
+        "#a855f7",
+        "#9333ea", // Purples
+        "#3b82f6",
+        "#2563eb", // Blues
+        "#14b8a6",
+        "#0d9488", // Teals
+      ];
+
+      // Use player name to deterministically select a color
+      const nameHash = name
+        .split("")
+        .reduce((acc, char) => acc + char.charCodeAt(0), 0);
+      return colors[nameHash % colors.length];
+    };
+
+    // Create the entry with isAI flag
+    const newEntry: LeaderboardEntry = {
+      name: playerName,
+      time: time,
+      track: track,
+      timestamp: new Date().toISOString(),
+      carColor: getPlayerColor(playerName),
+      isAI: isAI,
+    };
+
+    // Create a track-specific key for the leaderboard
+    const leaderboardKey = `raceLeaderboard_${track}`;
+
+    // Get existing leaderboard for this specific track
+    let leaderboard: LeaderboardEntry[] = [];
+    const storedLeaderboard = localStorage.getItem(leaderboardKey);
+    if (storedLeaderboard) {
+      leaderboard = JSON.parse(storedLeaderboard);
+    }
+
+    // Add new entry
+    leaderboard.push(newEntry);
+
+    // Sort by time (ascending = faster times first)
+    leaderboard.sort((a, b) => {
+      // Convert time strings to comparable values
+      const timeA = a.time
+        .split(":")
+        .reduce((acc, val) => acc * 60 + parseFloat(val), 0);
+      const timeB = b.time
+        .split(":")
+        .reduce((acc, val) => acc * 60 + parseFloat(val), 0);
+      return timeA - timeB;
+    });
+
+    // Keep only top 10 entries per track
+    if (leaderboard.length > 10) {
+      leaderboard = leaderboard.slice(0, 10);
+    }
+
+    // Save back to localStorage with track-specific key
+    localStorage.setItem(leaderboardKey, JSON.stringify(leaderboard));
+    console.log(`Race saved to leaderboard for ${track}:`, newEntry);
+  } catch (error) {
+    console.error("Error saving race to leaderboard:", error);
+  }
+}
+
+// Function to get race time from DOM when race ends
+function getRaceTime(): string | null {
+  try {
+    // First check for time in the time-announcer element
+    const timeAnnouncer = document.querySelector(".time-announcer");
+    if (timeAnnouncer) {
+      const currentTimeElement = timeAnnouncer.querySelector(".current");
+      if (currentTimeElement && currentTimeElement.textContent) {
+        // Format is "00:17,336" - need to replace comma with period
+        const timeText = currentTimeElement.textContent.trim();
+        // Replace comma with period for standard format
+        const formattedTime = timeText.replace(",", ".");
+        console.log("Extracted race time from announcer:", formattedTime);
+        return formattedTime;
+      }
+    }
+    return null;
+  } catch (error) {
+    console.error("Error getting race time:", error);
+    return null;
+  }
+}
+
+// Add a reset player button to the top right corner
+function addResetPlayerButton() {
+  // Remove existing button if it exists
+  const existingButton = document.getElementById("reset-player-button");
+  if (existingButton) {
+    existingButton.remove();
+  }
+
+  const button = document.createElement("button");
+  button.id = "reset-player-button";
+  button.innerHTML = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
+      <path d="M3 3v5h5"></path>
+      <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"></path>
+      <path d="M16 21h5v-5"></path>
+    </svg>
+    Reset Player
+  `;
+
+  button.style.cssText = `
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 9000;
+    background: rgba(220, 38, 38, 0.9);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 8px 12px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    transition: all 0.2s ease;
+  `;
+
+  button.addEventListener("mouseover", () => {
+    button.style.transform = "translateY(-2px)";
+    button.style.boxShadow =
+      "0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)";
+  });
+
+  button.addEventListener("mouseout", () => {
+    button.style.transform = "translateY(0)";
+    button.style.boxShadow =
+      "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)";
+  });
+
+  button.addEventListener("click", () => {
+    // Show a confirmation dialog
+    showResetConfirmation();
+  });
+
+  document.body.appendChild(button);
+}
+
+// Show a confirmation dialog before resetting player data
+function showResetConfirmation() {
+  const backdrop = document.createElement("div");
+  backdrop.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.85);
+    backdrop-filter: blur(8px);
+    z-index: 10001;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: fadeIn 0.3s ease-out;
+  `;
+
+  const dialog = document.createElement("div");
+  dialog.style.cssText = `
+    background: #0a0a0a;
+    color: #ffffff;
+    border-radius: 12px;
+    width: 400px;
+    max-width: 90%;
+    padding: 24px;
+    box-shadow: 0 20px 25px -5px rgba(220, 38, 38, 0.25), 0 8px 10px -6px rgba(0, 0, 0, 0.3);
+    animation: slideUp 0.4s ease-out;
+    border: 1px solid rgba(220, 38, 38, 0.3);
+    text-align: center;
+  `;
+
+  dialog.innerHTML = `
+    <style>
+      @keyframes fadeIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
+      }
+      
+      @keyframes slideUp {
+        from { opacity: 0; transform: translateY(20px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+    </style>
+    <h2 style="margin-top: 0; font-size: 1.5rem; color: white;">Reset Player Data?</h2>
+    <p style="margin-bottom: 24px; color: rgba(255,255,255,0.7);">This will clear your name and settings. You'll need to set them again before racing.</p>
+    <div style="display: flex; gap: 12px; justify-content: center;">
+      <button id="reset-cancel" style="
+        background: rgba(255,255,255,0.1);
+        border: none;
+        padding: 10px 16px;
+        border-radius: 6px;
+        color: white;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s ease;
+      ">Cancel</button>
+      <button id="reset-confirm" style="
+        background: linear-gradient(to right, #dc2626, #b91c1c);
+        border: none;
+        padding: 10px 16px;
+        border-radius: 6px;
+        color: white;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s ease;
+      ">Reset</button>
+    </div>
+  `;
+
+  // Close the dialog
+  const closeDialog = () => {
+    backdrop.remove();
+  };
+
+  // Setup event listeners
+  backdrop.addEventListener("click", (event) => {
+    if (event.target === backdrop) {
+      closeDialog();
+    }
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      closeDialog();
+    }
+  });
+
+  // Add button click handlers after appending to DOM
+  document.body.appendChild(backdrop);
+  backdrop.appendChild(dialog);
+
+  const cancelButton = document.getElementById("reset-cancel");
+  const confirmButton = document.getElementById("reset-confirm");
+
+  cancelButton?.addEventListener("click", closeDialog);
+  confirmButton?.addEventListener("click", () => {
+    // Reset player data in Chrome storage
+    chrome.storage.local.remove(
+      ["playerName", "selectedTrack", "aiDriverEnabled"],
+      () => {
+        console.log("Player data reset");
+        closeDialog();
+      }
+    );
   });
 }
