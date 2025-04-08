@@ -60,6 +60,8 @@ chrome.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
     await chrome.storage.local.set({ selectedTrack: message.track });
 
     await redirectToTrack(message.track);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    closeWelcomeDialog();
     if (message.isAIDriverSet) {
       await new Promise((resolve) => setTimeout(resolve, 1000));
       fetchJsonData(message.track)
@@ -3349,4 +3351,26 @@ function showResetConfirmation() {
       }
     );
   });
+}
+
+function closeWelcomeDialog() {
+  // Find the backdrop element created by showWelcomeDialog
+  const backdrop = document.querySelector(
+    'div[style*="backdrop-filter: blur(8px)"][style*="z-index: 9999"]'
+  );
+
+  // Remove event listener for Escape key if it was added
+  document.removeEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      backdrop?.remove();
+    }
+  });
+
+  // If found, remove it from the DOM
+  if (backdrop) {
+    backdrop.remove();
+    console.log("Welcome dialog closed successfully");
+  } else {
+    console.log("Welcome dialog not found or already closed");
+  }
 }
